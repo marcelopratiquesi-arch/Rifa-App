@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { Sun, Moon, LockKey } from '@phosphor-icons/react';
+import { Sun, Moon, LockKey, CalendarBlank, MapPin, Users, Ticket, Clock, CheckCircle } from '@phosphor-icons/react';
 import { auth, db } from './services/firebase';
 import GradeNumeros from './components/GradeNumeros';
 import TelaPagamento from './components/TelaPagamento';
@@ -10,6 +10,7 @@ import TelaAdmin from './components/TelaAdmin';
 // ─── CONFIGURAÇÕES GLOBAIS ────────────────────────────────
 const PRECO_UNITARIO = 10;
 const EXPIRACAO_REAL = 24 * 60 * 60 * 1000; // 24 horas
+const TOTAL_NUMEROS = 1000;
 // ─────────────────────────────────────────────────────────
 
 function calcularValor(qtd) {
@@ -33,6 +34,14 @@ function calcularValor(qtd) {
   return { total, blocos };
 }
 
+// ─── FUNÇÃO PARA MASCARAR O NOME (LGPD) ───────────────────
+const mascararNome = (nome) => {
+  if (!nome) return 'Alguém';
+  const partes = nome.trim().split(' ');
+  if (partes.length === 1) return partes[0];
+  return `${partes[0]} ${partes[1].charAt(0)}.`;
+};
+
 export default function App() {
   const [telaAtiva, setTelaAtiva] = useState('comprar'); 
   const [modoCompra, setModoCompra] = useState('grelha');  
@@ -40,6 +49,7 @@ export default function App() {
   const [numerosSelecionados, setNumerosSelecionados] = useState([]);
   const [pedidos, setPedidos] = useState([]);
   const [usuarioId, setUsuarioId] = useState(null);
+  const [tempoRestante, setTempoRestante] = useState({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
 
   // ─── AUTENTICAÇÃO ANÔNIMA ────────────────────────────────
   useEffect(() => {
@@ -59,28 +69,55 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── LÓGICA RIGOROSA DE FILTRAGEM DE CORES ───────────────
+  // ─── CRONÔMETRO DE CONTAGEM REGRESSIVA ───────────────────
+  useEffect(() => {
+    const dataSorteio = new Date('2026-07-22T20:00:00-03:00').getTime();
+
+    const atualizarCronometro = () => {
+      const agora = new Date().getTime();
+      const diferenca = dataSorteio - agora;
+
+      if (diferenca > 0) {
+        setTempoRestante({
+          dias: Math.floor(diferenca / (1000 * 60 * 60 * 24)),
+          horas: Math.floor((diferenca % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          minutos: Math.floor((diferenca % (1000 * 60 * 60)) / (1000 * 60)),
+          segundos: Math.floor((diferenca % (1000 * 60)) / 1000)
+        });
+      } else {
+        setTempoRestante({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
+      }
+    };
+
+    atualizarCronometro(); 
+    const intervalo = setInterval(atualizarCronometro, 1000);
+    return () => clearInterval(intervalo);
+  }, []);
+
+  // ─── LÓGICA DE FILTRAGEM ───────────────────────────────
   const pagos = [];
   const pendentes = [];
   const agora = Date.now();
 
   pedidos.forEach((p) => {
-    // Garante que o pedido tem números atrelados
     if (!p.nums || !Array.isArray(p.nums)) return;
-
     if (p.status === 'pago') {
-      // Se está pago, trava como verde
       pagos.push(...p.nums);
     } else if (p.status === 'pendente') {
-      // Se está pendente E o relógio de 24h não estourou, trava como amarelo
       if (agora - p.ts < EXPIRACAO_REAL) {
         pendentes.push(...p.nums);
       }
     }
-    // IMPORTANTE: Se o status for 'expirado', o código simplesmente IGNORA.
-    // Como os números não entram nem na lista 'pagos' nem na 'pendentes',
-    // a GradeNumeros entende que eles estão 100% livres e pinta de cinza!
   });
+
+  const qtdPagos = pagos.length;
+  const qtdReservados = pendentes.length;
+  const qtdDisponiveis = TOTAL_NUMEROS - qtdPagos - qtdReservados;
+
+  const ultimosCompradores = pedidos
+    .filter((p) => p.status === 'pago' && p.nums && p.nums.length > 0)
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 3);
 
   const alternarNumero = useCallback((num) => {
     setNumerosSelecionados((prev) =>
@@ -111,8 +148,7 @@ export default function App() {
   };
 
   const gerarSurpresinha = (quantidade) => {
-    const todosOsNumeros = Array.from({ length: 1000 }, (_, i) => String(i + 1).padStart(3, '0'));
-    // A Surpresinha também obedece à nova regra e não puxa números pendentes ou pagos
+    const todosOsNumeros = Array.from({ length: TOTAL_NUMEROS }, (_, i) => String(i + 1).padStart(3, '0'));
     const ocupados = new Set([...pagos, ...pendentes, ...numerosSelecionados]);
     const livres = todosOsNumeros.filter(n => !ocupados.has(n));
 
@@ -120,7 +156,6 @@ export default function App() {
       alert(`Desculpe, só temos ${livres.length} números disponíveis no momento.`);
       return;
     }
-
     const misturados = livres.sort(() => 0.5 - Math.random());
     setNumerosSelecionados(prev => [...prev, ...misturados.slice(0, quantidade)]);
   };
@@ -128,80 +163,203 @@ export default function App() {
   const mostrarBarraRodape = telaAtiva === 'comprar' && modoCompra === 'grelha' && numerosSelecionados.length > 0;
 
   return (
-    <div className={temaEscuro ? 'dark' : ''}>
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white transition-colors duration-300">
+    <div className={`${temaEscuro ? 'dark' : ''} antialiased selection:bg-orange-500/30`}>
+      <div className="min-h-screen bg-[#F8F9FA] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-100 transition-colors duration-500 font-sans pb-24">
 
-        {/* CABEÇALHO SUPERIOR */}
-        <nav className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-900/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 flex justify-between items-center shadow-sm dark:shadow-lg transition-colors">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setTelaAtiva('comprar'); setModoCompra('grelha'); }}>
-            <span className="text-xl font-black text-orange-500">🎟️ Rifa Pratique</span>
-          </div>
-          
-          <div className="flex gap-3">
-            <button 
-              onClick={() => setTemaEscuro(!temaEscuro)}
-              className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
-              title="Alternar Tema"
-            >
-              {temaEscuro ? <Sun size={24} weight="bold" /> : <Moon size={24} weight="bold" />}
-            </button>
-            <button 
-              onClick={() => setTelaAtiva('admin')}
-              className="p-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
-              title="Painel Admin"
-            >
-              <LockKey size={24} weight="bold" />
-            </button>
+        {/* CABEÇALHO */}
+        <nav className="sticky top-0 z-50 bg-white/80 dark:bg-[#09090B]/80 backdrop-blur-lg border-b border-zinc-200/80 dark:border-zinc-800/80 px-4 py-3 flex justify-between items-center transition-colors">
+          <div className="max-w-5xl mx-auto w-full flex justify-between items-center">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setTelaAtiva('comprar'); setModoCompra('grelha'); }}>
+              <span className="text-xl font-black bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent tracking-tight">
+                🎟️ Rifa Pratique
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setTemaEscuro(!temaEscuro)}
+                className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-all"
+              >
+                {temaEscuro ? <Sun size={22} weight="bold" /> : <Moon size={22} weight="bold" />}
+              </button>
+              <button 
+                onClick={() => setTelaAtiva('admin')}
+                className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-all"
+              >
+                <LockKey size={22} weight="bold" />
+              </button>
+            </div>
           </div>
         </nav>
 
-        <main className={`max-w-4xl mx-auto px-4 py-6 ${mostrarBarraRodape ? "pb-32" : ""}`}>
+        <main className="max-w-5xl mx-auto px-4 py-8">
           
-          {/* ROTEAMENTO: TELA ADMIN */}
           {telaAtiva === 'admin' && <TelaAdmin />}
 
-          {/* ROTEAMENTO: TELA COMPRAR (GRELHA DE NÚMEROS) */}
           {telaAtiva === 'comprar' && modoCompra === 'grelha' && (
-            <div className="animate-fade-in">
-              <div className="text-center mb-8">
-                <h1 className="text-3xl sm:text-4xl font-black text-zinc-900 dark:text-white mb-2 transition-colors">
-                  🏆 Sorteio Oficial
-                </h1>
-                <p className="text-zinc-500 dark:text-zinc-400 text-sm">Escolha seus números ou aproveite nossas promoções</p>
+            <div className="animate-fade-in space-y-12">
+              
+              {/* HERO SECTION - BANNER PRINCIPAL */}
+              <div className="relative bg-zinc-900 dark:bg-zinc-900/80 rounded-[2rem] p-6 sm:p-10 overflow-hidden shadow-2xl border border-zinc-800">
+                {/* Efeito de luz no fundo */}
+                <div className="absolute -top-24 -right-24 w-96 h-96 bg-orange-500/20 rounded-full blur-[80px] pointer-events-none" />
+                <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-purple-500/10 rounded-full blur-[80px] pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col md:flex-row gap-8 items-center justify-between">
+                  {/* Textos e Endereço */}
+                  <div className="text-center md:text-left flex-1">
+                    <span className="inline-block py-1 px-3 rounded-full bg-orange-500/10 text-orange-400 text-xs font-bold uppercase tracking-wider mb-4 border border-orange-500/20">
+                      Sorteio Oficial 🏆
+                    </span>
+                    <h1 className="text-4xl sm:text-5xl font-black text-white mb-4 leading-tight tracking-tight">
+                      Garanta sua chance <br className="hidden sm:block"/> de ganhar!
+                    </h1>
+                    <div className="flex flex-col gap-2 text-zinc-400 text-sm">
+                      <div className="flex items-center justify-center md:justify-start gap-2">
+                        <CalendarBlank size={18} className="text-orange-500" />
+                        <strong className="text-zinc-200">22 de Julho (22/07) às 20h</strong>
+                      </div>
+                      <div className="flex items-start justify-center md:justify-start gap-2">
+                        <MapPin size={18} className="text-orange-500 shrink-0 mt-0.5" />
+                        <span>Pratique Fitness Santa Inês II <br/> <span className="text-xs opacity-70">Av. José Cândido da Silveira, 2790</span></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cronômetro Premium */}
+                  <div className="bg-black/40 backdrop-blur-md border border-white/10 p-5 rounded-2xl shrink-0 w-full md:w-auto">
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      <Clock size={16} className="text-orange-500" />
+                      <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">O tempo está acabando</span>
+                    </div>
+                    <div className="flex justify-center gap-3 sm:gap-4 text-center">
+                      {[
+                        { valor: tempoRestante.dias, label: 'Dias' },
+                        { valor: tempoRestante.horas, label: 'Horas' },
+                        { valor: tempoRestante.minutos, label: 'Min' },
+                        { valor: tempoRestante.segundos, label: 'Seg' }
+                      ].map((item, idx) => (
+                        <div key={idx} className="flex flex-col items-center">
+                          <div className="bg-white/5 border border-white/10 w-12 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center shadow-inner">
+                            <span className="text-2xl sm:text-3xl font-black text-white font-mono">{String(item.valor).padStart(2, '0')}</span>
+                          </div>
+                          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mt-2">{item.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* PACOTES PROMOCIONAIS */}
-              <div className="mb-8">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <div className="flex items-center gap-3 mb-6">
+                  <h2 className="text-xl font-black tracking-tight text-zinc-900 dark:text-white">Escolha seus números</h2>
+                  <div className="h-px flex-1 bg-gradient-to-r from-zinc-200 to-transparent dark:from-zinc-800" />
+                </div>
+                
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {[
-                    { qtd: 1,  titulo: 'Avulso', desc: '1 Número', preco: 'R$ 10,00', color: 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white' },
-                    { qtd: 6,  titulo: 'Pague 5, Leve 6', desc: '6 Números', preco: 'R$ 50,00', color: 'bg-orange-50 dark:bg-zinc-900 border-orange-200 dark:border-zinc-800 text-zinc-900 dark:text-white' },
-                    { qtd: 13, titulo: 'Pague 10, Leve 13', desc: '13 Números', preco: 'R$ 100,00', color: 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-500/50 text-orange-900 dark:text-orange-100' },
-                    { qtd: 26, titulo: 'Pague 20, Leve 26', desc: '26 Números', preco: 'R$ 200,00', color: 'bg-orange-500 dark:bg-orange-600 border-orange-600 dark:border-orange-400 text-white shadow-lg shadow-orange-500/30' },
-                  ].map(({ qtd, titulo, desc, preco, color }) => (
+                    { qtd: 1,  titulo: 'Avulso', desc: '1 Número', preco: 'R$ 10,00', economia: null, destaque: false },
+                    { qtd: 6,  titulo: 'Promoção', desc: '6 Números', preco: 'R$ 50,00', economia: 'Economize R$ 10', destaque: false },
+                    { qtd: 13, titulo: 'Vantagem', desc: '13 Números', preco: 'R$ 100,00', economia: 'Economize R$ 30', destaque: false },
+                    { qtd: 26, titulo: '🔥 MAIS VENDIDO', desc: '26 Números', preco: 'R$ 200,00', economia: 'Economize R$ 60', destaque: true },
+                  ].map(({ qtd, titulo, desc, preco, economia, destaque }) => (
                     <button
                       key={qtd}
                       onClick={() => gerarSurpresinha(qtd)}
-                      className={`rounded-xl p-4 text-center transition-all hover:scale-[1.02] border shadow-sm ${color}`}
+                      className={`relative flex flex-col items-center justify-center p-5 rounded-3xl transition-all duration-300 hover:-translate-y-1 ${
+                        destaque 
+                          ? 'bg-gradient-to-b from-orange-500 to-orange-600 shadow-[0_8px_30px_rgb(249,115,22,0.3)] border-0 text-white transform scale-[1.02]' 
+                          : 'bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-orange-500/50 hover:shadow-md text-zinc-900 dark:text-white'
+                      }`}
                     >
-                      <p className="text-[11px] font-bold uppercase tracking-wider mb-1 opacity-80">{titulo}</p>
-                      <p className="text-xl font-black mb-1">{desc}</p>
-                      <p className="font-bold text-sm opacity-90">{preco}</p>
+                      {destaque && (
+                        <div className="absolute -top-3.5 bg-zinc-900 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg border border-zinc-700 whitespace-nowrap">
+                          Melhor Custo-Benefício
+                        </div>
+                      )}
+                      <span className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${destaque ? 'text-orange-100' : 'text-zinc-500'}`}>
+                        {titulo}
+                      </span>
+                      <strong className="text-2xl sm:text-3xl font-black mb-1">{desc}</strong>
+                      <span className={`text-sm font-semibold mb-3 ${destaque ? 'text-orange-50' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                        {preco}
+                      </span>
+                      {economia && (
+                        <div className={`text-[11px] font-bold px-3 py-1.5 rounded-lg w-full ${
+                          destaque ? 'bg-black/20 text-white' : 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                        }`}>
+                          💸 {economia}
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* LEGENDA DE CORES */}
-              <div className="flex flex-wrap justify-center gap-4 mb-6 text-xs font-semibold text-zinc-600 dark:text-zinc-300 transition-colors">
-                <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 inline-block" /> Disponível</span>
-                <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-orange-500 dark:bg-orange-600 inline-block" /> Selecionado</span>
-                <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-400 dark:bg-yellow-500 inline-block" /> Reservado</span>
-                <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-green-500 dark:bg-green-600 inline-block" /> Pago</span>
+              {/* DADOS DA RIFA E PROVA SOCIAL */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Placar de Disponibilidade */}
+                <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm flex items-center justify-around">
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-zinc-900 dark:text-white mb-1">{qtdDisponiveis}</p>
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Disponíveis</p>
+                  </div>
+                  <div className="w-px h-12 bg-zinc-200 dark:bg-zinc-800" />
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-yellow-500 mb-1">{qtdReservados}</p>
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Reservados</p>
+                  </div>
+                  <div className="w-px h-12 bg-zinc-200 dark:bg-zinc-800" />
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-green-500 mb-1">{qtdPagos}</p>
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Pagos</p>
+                  </div>
+                </div>
+
+                {/* Últimos Compradores */}
+                <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Últimas Participações</h3>
+                  </div>
+                  {ultimosCompradores.length === 0 ? (
+                    <p className="text-sm text-zinc-400 italic">Seja o primeiro a garantir seus números!</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {ultimosCompradores.map((p) => (
+                        <div key={p.id} className="flex items-center gap-3">
+                          <CheckCircle weight="fill" className="text-green-500 text-lg shrink-0" />
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">
+                            <strong className="text-zinc-900 dark:text-white font-bold">{mascararNome(p.nome)}</strong> garantiu <strong className="text-orange-500">{p.nums.length} número{p.nums.length > 1 ? 's' : ''}</strong>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* GRELHA RENDERIZADA AQUI */}
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-xl shadow-sm dark:shadow-lg transition-colors">
+              {/* ÁREA DA GRELHA */}
+              <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
+                
+                {/* Legenda redesenhada */}
+                <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700" /> Disponível
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.4)]" /> Selecionado
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-yellow-400" /> Reservado
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-green-500" /> Pago
+                  </div>
+                </div>
+
                 <GradeNumeros 
                   selecionados={numerosSelecionados} 
                   onAlternarNumero={alternarNumero} 
@@ -209,10 +367,10 @@ export default function App() {
                   pendentes={pendentes} 
                 />
               </div>
+
             </div>
           )}
 
-          {/* ROTEAMENTO: TELA DE CHECKOUT */}
           {telaAtiva === 'comprar' && modoCompra === 'pagamento' && (
             <TelaPagamento 
               numeros={numerosSelecionados} 
@@ -223,30 +381,31 @@ export default function App() {
           )}
         </main>
 
-        {/* BARRA FIXA NO RODAPÉ (CARRINHO FLUTUANTE) */}
+        {/* BARRA DE COMPRA FLUTUANTE */}
         {mostrarBarraRodape && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-zinc-900/98 backdrop-blur border-t border-zinc-200 dark:border-zinc-700 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] dark:shadow-2xl px-4 py-3 transition-colors">
-            <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-tight mb-1">
-                  <span className="text-orange-500 dark:text-orange-400 font-black text-base">{numerosSelecionados.length}</span> selecionado(s)
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-[#09090B]/90 backdrop-blur-lg border-t border-zinc-200 dark:border-zinc-800 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] dark:shadow-2xl px-4 py-4 transition-colors animate-slide-up">
+            <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-widest mb-0.5">
+                  <span className="text-orange-500 text-sm">{numerosSelecionados.length}</span> cota(s)
                 </p>
-                <p className="text-green-600 dark:text-green-400 font-black text-2xl leading-tight">
+                <p className="text-green-600 dark:text-green-400 font-black text-2xl sm:text-3xl leading-none">
                   R$ {valorCobrado.toFixed(2).replace('.', ',')}
                 </p>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2 sm:gap-4">
                 <button 
                   onClick={() => setNumerosSelecionados([])} 
-                  className="text-xs font-bold text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors px-2 py-1"
+                  className="text-xs font-bold text-zinc-400 hover:text-red-500 transition-colors px-3 py-2"
                 >
                   Limpar
                 </button>
                 <button 
                   onClick={irParaPagamento} 
-                  className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-6 py-3.5 rounded-xl transition-all text-sm shadow-lg shadow-orange-900/30 whitespace-nowrap"
+                  className="bg-orange-600 hover:bg-orange-500 active:scale-95 text-white font-black px-6 sm:px-8 py-3 sm:py-4 rounded-2xl transition-all shadow-lg shadow-orange-600/30 flex items-center gap-2"
                 >
-                  Garantir agora &rarr;
+                  <Ticket size={20} weight="fill" className="hidden sm:block" />
+                  Garantir agora
                 </button>
               </div>
             </div>
