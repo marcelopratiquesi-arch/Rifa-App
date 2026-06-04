@@ -18,7 +18,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   const CHAVE_PIX = "lemosmjlp@gmail.com";
   const NUMERO_WHATSAPP_ADMIN = "5531973483934"; 
 
-  // Busca a lista de Vendedores do Firebase em tempo real
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'vendedores'), (snapshot) => {
       const lista = snapshot.docs.map(doc => doc.data().nome);
@@ -62,7 +61,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     try {
       await setDoc(doc(db, 'pedidos', novoPedidoId), {
         id: novoPedidoId, nome: dados.nome, cpf: dados.cpf, tel: dados.telefone, 
-        email: dados.email, endereco: dados.endereco, vendedor: dados.vendedor, // <-- Vendedor salvo aqui
+        email: dados.email, endereco: dados.endereco, vendedor: dados.vendedor,
         nums: numeros, valor: valorCobrado, status: 'pendente', temComprovante: false, ts: Date.now()
       });
       setPedidoIdGerado(novoPedidoId);
@@ -76,11 +75,22 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     alert("Chave PIX copiada!");
   };
 
+  // ✅ ÚNICA ALTERAÇÃO: mensagem agora inclui CPF, números e valor
   const handleEnviarWhatsApp = async () => {
     setACarregar(true);
     try {
       await updateDoc(doc(db, 'pedidos', pedidoIdGerado), { temComprovante: true });
-      const mensagem = `Olá! Sou o(a) ${dados.nome}. Acabei de fazer a reserva #${pedidoIdGerado} na Rifa Pratique e aqui está o meu comprovante!`;
+
+      const valor = Number(valorCobrado).toFixed(2).replace('.', ',');
+      const mensagem =
+        "Ola Marcelo!\n" +
+        "Sou *" + dados.nome + "* e acabei de fazer minha reserva na Rifa Pratique.\n\n" +
+        "*Pedido:* #" + pedidoIdGerado + "\n" +
+        "*CPF:* " + dados.cpf + "\n" +
+        "*Numeros reservados:* " + numeros.join(", ") + "\n" +
+        "*Valor pago:* R$ " + valor + "\n\n" +
+        "Segue o comprovante do PIX em anexo.";
+
       window.open(`https://wa.me/${NUMERO_WHATSAPP_ADMIN}?text=${encodeURIComponent(mensagem)}`, '_blank');
       setEtapa('sucesso');
     } finally { setACarregar(false); }
@@ -101,7 +111,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
             <input required type="tel" name="telefone" placeholder="WhatsApp" value={dados.telefone} onChange={handleChange} maxLength="15" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none" />
             <input required type="email" name="email" placeholder="E-mail" value={dados.email} onChange={handleChange} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none" />
             
-            {/* NOVO CAMPO: SELEÇÃO DE VENDEDOR */}
             {vendedores.length > 0 && (
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -123,7 +132,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
         </>
       )}
 
-      {/* ETAPA PIX E SUCESSO (Mantidas iguais ao anterior) */}
       {etapa === 'pagamento_pix' && (
         <div className="text-center animate-fade-in">
           {!tempoEsgotado ? (
