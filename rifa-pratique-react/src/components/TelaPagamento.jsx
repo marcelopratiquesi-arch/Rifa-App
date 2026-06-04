@@ -16,7 +16,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   });
 
   const CHAVE_PIX = "lemosmjlp@gmail.com";
-  const NUMERO_WHATSAPP_ADMIN = "5531900000000"; 
+  const NUMERO_WHATSAPP_ADMIN = "5531973483934"; 
 
   // Busca a lista de Vendedores do Firebase em tempo real
   useEffect(() => {
