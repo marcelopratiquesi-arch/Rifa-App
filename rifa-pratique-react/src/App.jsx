@@ -116,7 +116,7 @@ export default function App() {
 
   const ultimosCompradores = pedidos
     .filter((p) => p.status === 'pago' && p.nums && p.nums.length > 0)
-    .sort((a, b) => b.ts - a.ts)
+    .sort((a, b) => (b.tsPago || b.ts) - (a.tsPago || a.ts)) // ✅ A CORREÇÃO ESTÁ AQUI
     .slice(0, 3);
 
   const alternarNumero = useCallback((num) => {

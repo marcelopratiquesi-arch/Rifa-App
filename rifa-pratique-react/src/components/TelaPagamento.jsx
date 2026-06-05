@@ -18,9 +18,15 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   const CHAVE_PIX = "lemosmjlp@gmail.com";
   const NUMERO_WHATSAPP_ADMIN = "5531973483934"; 
 
+  // ─── BUSCA VENDEDORES ATIVOS ─────────────────────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'vendedores'), (snapshot) => {
-      const lista = snapshot.docs.map(doc => doc.data().nome);
+      const lista = snapshot.docs
+        .map(doc => doc.data())
+        .filter(data => data.ativo !== false) // Só puxa os ativos
+        .map(data => data.nome)
+        .sort((a, b) => a.localeCompare(b)); // Ordena A-Z
+      
       setVendedores(lista);
     });
     return () => unsub();
@@ -75,7 +81,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     alert("Chave PIX copiada!");
   };
 
-  // ✅ ÚNICA ALTERAÇÃO: mensagem agora inclui CPF, números e valor
   const handleEnviarWhatsApp = async () => {
     setACarregar(true);
     try {
