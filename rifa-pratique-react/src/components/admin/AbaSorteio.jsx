@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { 
-  Gift, Ticket, SpinnerGap, Trophy, WhatsappLogo, LockKey, 
+  Gift, Ticket, SpinnerGap, Trophy, WhatsappLogo, LockKey, LockOpen,
   WarningCircle, CheckCircle, FileText, X 
 } from '@phosphor-icons/react';
 import confetti from 'canvas-confetti';
@@ -253,20 +253,35 @@ Algoritmo de Sorteio: Fisher-Yates (Crypto.getRandomValues)
             {rifaStatus === 'finalizada' && <><Trophy className="text-purple-600" /> Sorteio Realizado</>}
           </h3>
           <p className="text-sm mt-1 opacity-80">
-            {rifaStatus === 'aberta' && "O sistema está recebendo novos pedidos normalmente."}
-            {rifaStatus === 'encerrada' && "Sistema bloqueado para novas compras. Conferindo pagamentos."}
+            {rifaStatus === 'aberta' && "O sistema está a receber novos pedidos normalmente."}
+            {rifaStatus === 'encerrada' && "Sistema bloqueado para novas compras. A conferir pagamentos."}
             {rifaStatus === 'finalizada' && "O evento foi concluído e os dados estão selados no banco."}
           </p>
         </div>
         
-        {rifaStatus === 'aberta' && (
-          <button 
-            onClick={() => alterarStatusRifa('encerrada')}
-            className="bg-zinc-900 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg font-bold shadow transition flex items-center gap-2"
-          >
-            <LockKey weight="bold" /> Encerrar Oficialmente
-          </button>
-        )}
+        <div className="flex gap-3">
+          {rifaStatus === 'aberta' && (
+            <button 
+              onClick={() => alterarStatusRifa('encerrada')}
+              className="bg-zinc-900 hover:bg-zinc-800 text-white px-6 py-3 rounded-lg font-bold shadow transition flex items-center gap-2"
+            >
+              <LockKey weight="bold" /> Encerrar Oficialmente
+            </button>
+          )}
+
+          {(rifaStatus === 'encerrada' || rifaStatus === 'finalizada') && (
+            <button 
+              onClick={() => {
+                setGanhadores(null);
+                setFaseSorteio('ocioso');
+                alterarStatusRifa('aberta');
+              }}
+              className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-lg font-bold shadow transition flex items-center gap-2"
+            >
+              <LockOpen weight="bold" /> Reabrir Vendas (Entrou mais gente)
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 2. PAINEL DE AUDITORIA */}
@@ -294,8 +309,19 @@ Algoritmo de Sorteio: Fisher-Yates (Crypto.getRandomValues)
 
       {/* 3. BLOQUEIO E BOTÃO DE SORTEIO */}
       {rifaStatus === 'finalizada' ? (
-        <div className="bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 p-6 rounded-xl text-center font-bold text-lg border border-purple-200 dark:border-purple-800">
-          Sorteio Oficial já realizado para esta edição.
+        <div className="bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 p-6 rounded-xl text-center border border-purple-200 dark:border-purple-800 flex flex-col items-center gap-4 mt-8">
+          <span className="font-bold text-lg">Sorteio Finalizado na Tela.</span>
+          <button 
+            onClick={() => {
+              if(!window.confirm('Escondeu o sorteio atual? (Nenhuma venda será perdida)')) return;
+              setGanhadores(null);
+              setFaseSorteio('ocioso');
+              alterarStatusRifa('encerrada'); 
+            }}
+            className="bg-purple-700 hover:bg-purple-600 text-white text-sm font-bold py-2 px-6 rounded-lg transition shadow-md"
+          >
+            Apertei sem querer! (Esconder ganhadores e liberar roleta)
+          </button>
         </div>
       ) : (
         <div className="bg-white dark:bg-zinc-900 p-8 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm text-center max-w-3xl mx-auto mt-8">
