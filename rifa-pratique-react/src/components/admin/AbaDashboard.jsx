@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { 
   CurrencyCircleDollar, Ticket, Medal, Target, 
   RocketLaunch, Storefront, DownloadSimple, FilePdf, Trophy,
-  WhatsappLogo
+  WhatsappLogo, FunnelSimple
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -15,6 +16,9 @@ const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
 
 export default function AbaDashboard({ pedidos, vendedores }) {
   
+  // ─── ESTADOS ──────────────────────────────────────────────────
+  const [filtroUnidade, setFiltroUnidade] = useState('Todas');
+
   // ─── CÁLCULOS MATEMÁTICOS E FINANCEIROS ──────────────────────
   const pedidosAprovados = pedidos.filter((p) => p.status === 'pago');
   const pedidosPendentes = pedidos.filter((p) => p.status === 'pendente');
@@ -85,53 +89,61 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
   const { vendedores: rankVend, unidades: rankUnit } = calcularRanking();
 
+  // Aplica o filtro de unidade na tabela de vendedores
+  const vendedoresFiltrados = filtroUnidade === 'Todas' 
+    ? rankVend 
+    : rankVend.filter(v => v.unidade === filtroUnidade);
+
   // ─── MENSAGEM DO WHATSAPP (A COBRANÇA DA EQUIPE) ──────────────
   const enviarRankingWhatsApp = () => {
-    // Removemos 'Venda Direta' para não cobrar o fantasma no grupo
-    const rankingEquipe = rankVend.filter(v => v.nome !== 'Venda Direta');
-    
-    const pontuaram = rankingEquipe.filter(v => v.cotas > 0);
-    const zerados = rankingEquipe.filter(v => v.cotas === 0);
-    
-    const metaGlobal = rankingEquipe.length * META_POR_VENDEDOR;
+    // O Whatsapp agora respeita o Filtro de Unidade!
+    const rankingEquipe      = vendedoresFiltrados.filter(v => v.nome !== 'Venda Direta');
+    const pontuaram          = rankingEquipe.filter(v => v.cotas > 0);
+    const zerados            = rankingEquipe.filter(v => v.cotas === 0);
+    const metaGlobal         = rankingEquipe.length * META_POR_VENDEDOR;
     const totalVendidoEquipe = rankingEquipe.reduce((acc, v) => acc + v.cotas, 0);
 
+    const tituloRanking = filtroUnidade === 'Todas' ? 'GERAL' : filtroUnidade.toUpperCase();
+
+    // ✅ / ❌ são universais em qualquer dispositivo
     const getEmoji = (cotas) => {
-      if (cotas >= 20) return "🟢🟢🟢";
-      if (cotas >= 10) return "🟢🟢❌";
-      if (cotas > 0)  return "🟢❌❌";
-      return "❌❌❌";
+      if (cotas >= 20) return '✅✅✅';
+      if (cotas >= 10) return '✅✅❌';
+      if (cotas > 0)   return '✅❌❌';
+      return '❌❌❌';
     };
 
-    let msg = `*🏆 Ranking de Vendas da Rifa 🏆*\n`;
-    msg += `*Total de Vendas:* ${totalVendidoEquipe.toString().padStart(2, '0')} / ${metaGlobal}\n\n`;
+    const linhas = [];
+
+    linhas.push(`*🏆 RANKING DE VENDAS - ${tituloRanking} 🏆*`);
+    linhas.push(`*Total de Vendas:* ${String(totalVendidoEquipe).padStart(2, '0')} / ${metaGlobal}`);
+    linhas.push('');
 
     let pos = 1;
-    
-    // Lista de quem já vendeu algo
+
     pontuaram.forEach((v) => {
-      const primeiroNome = v.nome.split(' ')[0].toUpperCase();
-      const cotasStr = v.cotas.toString().padStart(2, '0');
-      msg += `${pos} ${getEmoji(v.cotas)} ${primeiroNome} ${cotasStr}\n`;
+      const nome  = v.nome.split(' ')[0].toUpperCase();
+      const cotas = String(v.cotas).padStart(2, '0');
+      linhas.push(`${pos}º ${getEmoji(v.cotas)} ${nome} - ${cotas} cotas`);
       pos++;
     });
 
-    // Lista da Vergonha (Zerados)
     if (zerados.length > 0) {
-      msg += `\n➖➖➖➖➖➖➖➖➖➖\n`;
-      msg += `*🚨 BORA ACELERAR, GALERA! 🚀*\n`;
-      msg += `_Todos abaixo ainda não pontuaram hoje._\n`;
-      msg += `*SOCORRO, DEUS!!! 🙏*\n\n`;
+      linhas.push('');
+      linhas.push('➖➖➖➖➖➖➖➖➖➖');
+      linhas.push('*🚨 BORA ACELERAR, GALERA! 🚀*');
+      linhas.push('_Todos abaixo ainda nao pontuaram hoje._');
+      linhas.push('*SOCORRO, DEUS!!! 🙏*');
+      linhas.push('');
 
       zerados.forEach((v) => {
-        const primeiroNome = v.nome.split(' ')[0].toUpperCase();
-        msg += `${pos} ❌❌❌ ${primeiroNome}\n`;
+        const nome = v.nome.split(' ')[0].toUpperCase();
+        linhas.push(`${pos}º ❌❌❌ ${nome}`);
         pos++;
       });
     }
 
-    // Abre o WhatsApp no celular/computador sem número específico, para você selecionar o grupo da equipe
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open('https://wa.me/?text=' + encodeURIComponent(linhas.join('\n')), '_blank');
   };
 
   // ─── EXPORTAÇÃO DE RELATÓRIOS ─────────────────────────────────
@@ -304,7 +316,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
               <DownloadSimple size={18} /> Planilha
             </button>
             <button onClick={exportarPDF} className="flex-1 bg-[#E53E3E] hover:bg-[#c53030] text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm">
-              <FilePdf size={18} /> Relatório
+              <FilePdf size={18} /> Relatório PDF
             </button>
             <button onClick={enviarRankingWhatsApp} className="flex-1 bg-[#25D366] hover:bg-[#1ebe57] text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm shadow-md">
               <WhatsappLogo size={18} weight="fill" /> Enviar Grupo
@@ -313,11 +325,29 @@ export default function AbaDashboard({ pedidos, vendedores }) {
         </div>
       </div>
 
-      {/* ── RANKING GERAL E CONVERSÃO ── */}
+      {/* ── RANKING GERAL E CONVERSÃO COM FILTRO ── */}
       <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-        <h3 className="font-bold mb-4 flex items-center gap-2 text-zinc-900 dark:text-white text-lg">
-          <Trophy className="text-yellow-500" size={24} weight="fill" /> Desempenho da Equipe
-        </h3>
+        
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <h3 className="font-bold flex items-center gap-2 text-zinc-900 dark:text-white text-lg">
+            <Trophy className="text-yellow-500" size={24} weight="fill" /> Desempenho da Equipe
+          </h3>
+          
+          {/* SELECT DO FILTRO */}
+          <div className="relative w-full sm:w-auto">
+            <FunnelSimple size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <select
+              value={filtroUnidade}
+              onChange={(e) => setFiltroUnidade(e.target.value)}
+              className="pl-9 pr-8 py-2 w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none font-semibold cursor-pointer appearance-none shadow-sm"
+            >
+              <option value="Todas">🏆 Todas as Unidades</option>
+              <option value="Santa Inês 1">SI1 - Santa Inês 1</option>
+              <option value="Santa Inês 2">SI2 - Santa Inês 2</option>
+              <option value="Venda Direta">💻 Venda Direta</option>
+            </select>
+          </div>
+        </div>
         
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
@@ -332,12 +362,12 @@ export default function AbaDashboard({ pedidos, vendedores }) {
               </tr>
             </thead>
             <tbody>
-              {rankVend.length === 0 ? (
+              {vendedoresFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-8 text-center text-zinc-500">Nenhuma venda aprovada ainda.</td>
+                  <td colSpan="6" className="py-8 text-center text-zinc-500">Nenhum vendedor encontrado nesse filtro.</td>
                 </tr>
               ) : (
-                rankVend.map((v, i) => (
+                vendedoresFiltrados.map((v, i) => (
                   <tr key={v.nome} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-colors">
                     <td className="p-3 font-black text-orange-500">
                       {i === 0 ? '🥇 1º' : i === 1 ? '🥈 2º' : i === 2 ? '🥉 3º' : `#${i + 1}`}

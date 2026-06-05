@@ -60,6 +60,10 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
       alert("Preencha CPF e WhatsApp corretamente.");
       return;
     }
+    if (!dados.vendedor) {
+      alert("Por favor, selecione quem indicou a rifa.");
+      return;
+    }
 
     setACarregar(true);
     const novoPedidoId = 'P' + Date.now();
@@ -121,8 +125,9 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Storefront size={20} className="text-zinc-500" />
                 </div>
-                <select name="vendedor" value={dados.vendedor} onChange={handleChange} className="w-full pl-10 bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none appearance-none">
-                  <option value="">Indicação (Opcional)</option>
+                <select required name="vendedor" value={dados.vendedor} onChange={handleChange} className="w-full pl-10 bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none appearance-none">
+                  <option value="" disabled>Quem te indicou? (Obrigatório)</option>
+                  <option value="Venda Direta">Ninguém (Venda Direta / Recepção)</option>
                   {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
               </div>
