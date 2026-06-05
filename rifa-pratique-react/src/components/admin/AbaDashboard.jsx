@@ -1,6 +1,7 @@
 import { 
   CurrencyCircleDollar, Ticket, Medal, Target, 
-  RocketLaunch, Storefront, DownloadSimple, FilePdf, Trophy 
+  RocketLaunch, Storefront, DownloadSimple, FilePdf, Trophy,
+  WhatsappLogo
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -8,6 +9,7 @@ import 'jspdf-autotable';
 
 // Configurações e Funções Auxiliares Isoladas
 const TOTAL_COTAS = 1000;
+const META_POR_VENDEDOR = 20; // 🎯 Meta individual ajustada para 20 cotas
 const fmtValor = (v) => Number(v).toFixed(2).replace('.', ',');
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
 
@@ -49,6 +51,13 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   const calcularRanking = () => {
     const rv = {}, ru = { 'Santa Inês 1': { valor: 0, cotas: 0 }, 'Santa Inês 2': { valor: 0, cotas: 0 } };
     
+    // 1. INJETA TODOS OS VENDEDORES ATIVOS PRIMEIRO (Para os zerados aparecerem)
+    vendedores.forEach(v => {
+      if (v.ativo !== false) {
+        rv[v.nome] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: v.unidade || 'Santa Inês 1' };
+      }
+    });
+
     pedidosAprovados.forEach((p) => {
       const vend = p.vendedor || 'Venda Direta';
       const und  = mapaVendedores[vend] || 'Venda Direta';
@@ -66,14 +75,64 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     });
 
     return {
+      // Ordena por Quantidade de Cotas primeiro, depois por Valor
       vendedores: Object.entries(rv).map(([n, d]) => ({ 
         nome: n, ...d, conversao: d.pedidosCriados > 0 ? ((d.pedidosPagos / d.pedidosCriados) * 100).toFixed(0) : 0 
-      })).sort((a, b) => b.valor - a.valor),
+      })).sort((a, b) => b.cotas - a.cotas || b.valor - a.valor),
       unidades:   Object.entries(ru).map(([n, d]) => ({ nome: n, ...d })).sort((a, b) => b.valor - a.valor),
     };
   };
 
   const { vendedores: rankVend, unidades: rankUnit } = calcularRanking();
+
+  // ─── MENSAGEM DO WHATSAPP (A COBRANÇA DA EQUIPE) ──────────────
+  const enviarRankingWhatsApp = () => {
+    // Removemos 'Venda Direta' para não cobrar o fantasma no grupo
+    const rankingEquipe = rankVend.filter(v => v.nome !== 'Venda Direta');
+    
+    const pontuaram = rankingEquipe.filter(v => v.cotas > 0);
+    const zerados = rankingEquipe.filter(v => v.cotas === 0);
+    
+    const metaGlobal = rankingEquipe.length * META_POR_VENDEDOR;
+    const totalVendidoEquipe = rankingEquipe.reduce((acc, v) => acc + v.cotas, 0);
+
+    const getEmoji = (cotas) => {
+      if (cotas >= 20) return "🟢🟢🟢";
+      if (cotas >= 10) return "🟢🟢❌";
+      if (cotas > 0)  return "🟢❌❌";
+      return "❌❌❌";
+    };
+
+    let msg = `*🏆 Ranking de Vendas da Rifa 🏆*\n`;
+    msg += `*Total de Vendas:* ${totalVendidoEquipe.toString().padStart(2, '0')} / ${metaGlobal}\n\n`;
+
+    let pos = 1;
+    
+    // Lista de quem já vendeu algo
+    pontuaram.forEach((v) => {
+      const primeiroNome = v.nome.split(' ')[0].toUpperCase();
+      const cotasStr = v.cotas.toString().padStart(2, '0');
+      msg += `${pos} ${getEmoji(v.cotas)} ${primeiroNome} ${cotasStr}\n`;
+      pos++;
+    });
+
+    // Lista da Vergonha (Zerados)
+    if (zerados.length > 0) {
+      msg += `\n➖➖➖➖➖➖➖➖➖➖\n`;
+      msg += `*🚨 BORA ACELERAR, GALERA! 🚀*\n`;
+      msg += `_Todos abaixo ainda não pontuaram hoje._\n`;
+      msg += `*SOCORRO, DEUS!!! 🙏*\n\n`;
+
+      zerados.forEach((v) => {
+        const primeiroNome = v.nome.split(' ')[0].toUpperCase();
+        msg += `${pos} ❌❌❌ ${primeiroNome}\n`;
+        pos++;
+      });
+    }
+
+    // Abre o WhatsApp no celular/computador sem número específico, para você selecionar o grupo da equipe
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  };
 
   // ─── EXPORTAÇÃO DE RELATÓRIOS ─────────────────────────────────
   const exportarExcel = () => {
@@ -238,12 +297,17 @@ export default function AbaDashboard({ pedidos, vendedores }) {
               <h3 className="text-2xl font-black text-yellow-500">R$ {fmtValor(totalPendente)}</h3>
             </div>
           </div>
-          <div className="flex gap-3">
+          
+          {/* BOTÕES DE EXPORTAÇÃO E WHATSAPP AQUI */}
+          <div className="flex flex-col xl:flex-row gap-3">
             <button onClick={exportarExcel} className="flex-1 bg-[#107C41] hover:bg-[#0d6535] text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm">
               <DownloadSimple size={18} /> Planilha
             </button>
             <button onClick={exportarPDF} className="flex-1 bg-[#E53E3E] hover:bg-[#c53030] text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm">
-              <FilePdf size={18} /> Relatório PDF
+              <FilePdf size={18} /> Relatório
+            </button>
+            <button onClick={enviarRankingWhatsApp} className="flex-1 bg-[#25D366] hover:bg-[#1ebe57] text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm shadow-md">
+              <WhatsappLogo size={18} weight="fill" /> Enviar Grupo
             </button>
           </div>
         </div>

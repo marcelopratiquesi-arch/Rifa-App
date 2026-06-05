@@ -12,10 +12,12 @@
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/postcss": "^4.3.0",
+    "canvas-confetti": "^1.9.4",
     "firebase": "^12.14.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "react": "^19.2.6",
+    "react-confetti": "^6.4.0",
     "react-dom": "^19.2.6",
     "xlsx": "^0.18.5"
   },
