@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   MagnifyingGlass, FunnelSimple, Storefront, CalendarBlank,
-  WhatsappLogo, CheckCircle, XCircle, Clock, Receipt
+  WhatsappLogo, CheckCircle, XCircle, Clock, Receipt, PencilSimple
 } from '@phosphor-icons/react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -26,18 +26,22 @@ export default function AbaValidacao({ pedidos, vendedores }) {
   const [busca,           setBusca]           = useState('');
   const [filtroVendedor,  setFiltroVendedor]  = useState('');
   const [filtroUnidade,   setFiltroUnidade]   = useState('');
+  
+  // Estados para edição do vendedor
+  const [editandoVendedorId, setEditandoVendedorId] = useState(null);
+  const [novoVendedorLocal, setNovoVendedorLocal]   = useState('');
 
   // ─── AÇÕES DE BANCO DE DADOS (FIREBASE) ───────────────────────
-  const aprovarPedido = async (id) => {
-    if (!window.confirm('Confirmar o PIX e aprovar a venda?')) return;
+  const salvarNovoVendedor = async (id) => {
     try {
-      await updateDoc(doc(db, 'pedidos', id), { status: 'pago', tsPago: Date.now() });
+      await updateDoc(doc(db, 'pedidos', id), { vendedor: novoVendedorLocal });
+      setEditandoVendedorId(null);
     } catch (e) {
-      alert("Erro ao aprovar pedido.");
+      alert("Erro ao atualizar vendedor.");
     }
   };
 
-  const expirarPedido = async (id) => {
+  const aprovarPedido = async (id) => {
     if (!window.confirm('Tem certeza que deseja expirar e liberar os números?')) return;
     try {
       await updateDoc(doc(db, 'pedidos', id), { status: 'expirado' });
@@ -246,11 +250,48 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                       <Receipt size={14} /> {p.cpf}
                     </div>
                   )}
-                  {p.vendedor && (
-                    <p className="text-orange-600 dark:text-orange-500 font-semibold mt-1 flex items-center gap-1.5">
-                      <Storefront size={14} /> Vend: {p.vendedor}
-                    </p>
-                  )}
+                  
+                  {/* EDIÇÃO DE VENDEDOR DIRETO NO CARD */}
+                  <div className="mt-1 flex items-center justify-between gap-2 bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-900/30">
+                    {editandoVendedorId === p.id ? (
+                      <div className="flex w-full items-center gap-1 animate-fade-in">
+                        <select
+                          value={novoVendedorLocal}
+                          onChange={(e) => setNovoVendedorLocal(e.target.value)}
+                          className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs text-zinc-900 dark:text-white focus:outline-none"
+                        >
+                          <option value="">— Venda Direta —</option>
+                          {vendedoresAtivos.map((v) => (
+                            <option key={v.id} value={v.nome}>{v.nome}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => salvarNovoVendedor(p.id)} className="p-1.5 bg-green-500 hover:bg-green-600 text-white rounded shadow-sm" title="Salvar Vendedor">
+                          <CheckCircle size={14} weight="bold" />
+                        </button>
+                        <button onClick={() => setEditandoVendedorId(null)} className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded shadow-sm" title="Cancelar">
+                          <XCircle size={14} weight="bold" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-orange-600 dark:text-orange-500 font-semibold text-xs flex items-center gap-1.5 truncate">
+                          <Storefront size={14} className="shrink-0" /> 
+                          <span className="truncate">{p.vendedor ? `Vend: ${p.vendedor}` : 'Venda Direta (Sem indicação)'}</span>
+                        </p>
+                        <button
+                          onClick={() => {
+                            setEditandoVendedorId(p.id);
+                            setNovoVendedorLocal(p.vendedor || '');
+                          }}
+                          className="text-zinc-400 hover:text-orange-600 p-1 transition-colors shrink-0"
+                          title="Alterar Atribuição de Vendedor"
+                        >
+                          <PencilSimple size={14} weight="bold" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
                 </div>
 
                 <div className="flex flex-wrap gap-1.5 mb-4 max-h-[60px] overflow-y-auto scrollbar-thin">

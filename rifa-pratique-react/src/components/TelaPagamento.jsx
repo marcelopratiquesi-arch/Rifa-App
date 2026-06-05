@@ -18,14 +18,17 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   const CHAVE_PIX = "lemosmjlp@gmail.com";
   const NUMERO_WHATSAPP_ADMIN = "5531973483934"; 
 
-  // ─── BUSCA VENDEDORES ATIVOS ─────────────────────────────────
+// ─── BUSCA VENDEDORES ATIVOS ─────────────────────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'vendedores'), (snapshot) => {
       const lista = snapshot.docs
         .map(doc => doc.data())
         .filter(data => data.ativo !== false) // Só puxa os ativos
-        .map(data => data.nome)
-        .sort((a, b) => a.localeCompare(b)); // Ordena A-Z
+        .map(data => ({
+          nome: String(data.nome).toUpperCase(),
+          unidade: String(data.unidade || 'SANTA INÊS 1').toUpperCase()
+        }))
+        .sort((a, b) => a.nome.localeCompare(b.nome)); // Ordena A-Z
       
       setVendedores(lista);
     });
@@ -126,9 +129,16 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
                   <Storefront size={20} className="text-zinc-500" />
                 </div>
                 <select required name="vendedor" value={dados.vendedor} onChange={handleChange} className="w-full pl-10 bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none appearance-none">
-                  <option value="" disabled>Quem te indicou? (Obrigatório)</option>
-                  <option value="Venda Direta">Ninguém (Venda Direta / Recepção)</option>
-                  {vendedores.map(v => <option key={v} value={v}>{v}</option>)}
+                  <option value="" disabled hidden>QUEM TE INDICOU? (OBRIGATÓRIO)</option>
+                  
+                  {/* Agrupa as unidades dinamicamente em ordem alfabética */}
+                  {[...new Set(vendedores.map(v => v.unidade))].sort().map(unidade => (
+                    <optgroup key={unidade} label={unidade}>
+                      {vendedores.filter(v => v.unidade === unidade).map(v => (
+                        <option key={v.nome} value={v.nome}>{v.nome}</option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
             )}

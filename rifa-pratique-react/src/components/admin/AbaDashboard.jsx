@@ -96,7 +96,6 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
   // ─── MENSAGEM DO WHATSAPP (A COBRANÇA DA EQUIPE) ──────────────
   const enviarRankingWhatsApp = () => {
-    // O Whatsapp agora respeita o Filtro de Unidade!
     const rankingEquipe      = vendedoresFiltrados.filter(v => v.nome !== 'Venda Direta');
     const pontuaram          = rankingEquipe.filter(v => v.cotas > 0);
     const zerados            = rankingEquipe.filter(v => v.cotas === 0);
@@ -105,40 +104,30 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     const tituloRanking = filtroUnidade === 'Todas' ? 'GERAL' : filtroUnidade.toUpperCase();
 
-    // ✅ / ❌ são universais em qualquer dispositivo
-    const getEmoji = (cotas) => {
-      if (cotas >= 20) return '✅✅✅';
-      if (cotas >= 10) return '✅✅❌';
-      if (cotas > 0)   return '✅❌❌';
-      return '❌❌❌';
-    };
-
     const linhas = [];
 
-    linhas.push(`*🏆 RANKING DE VENDAS - ${tituloRanking} 🏆*`);
-    linhas.push(`*Total de Vendas:* ${String(totalVendidoEquipe).padStart(2, '0')} / ${metaGlobal}`);
+    linhas.push(`*RANKING DE VENDAS - ${tituloRanking}*`);
+    linhas.push(`*Total da Equipe:* ${totalVendidoEquipe} / ${metaGlobal} cotas`);
     linhas.push('');
 
     let pos = 1;
 
-    pontuaram.forEach((v) => {
-      const nome  = v.nome.split(' ')[0].toUpperCase();
-      const cotas = String(v.cotas).padStart(2, '0');
-      linhas.push(`${pos}º ${getEmoji(v.cotas)} ${nome} - ${cotas} cotas`);
-      pos++;
-    });
+    if (pontuaram.length > 0) {
+      linhas.push('*VENDAS REALIZADAS:*');
+      pontuaram.forEach((v) => {
+        const nome  = v.nome.split(' ')[0].toUpperCase();
+        const cotas = String(v.cotas).padStart(2, '0');
+        linhas.push(`${pos}º ${nome} - ${cotas} cotas`);
+        pos++;
+      });
+    }
 
     if (zerados.length > 0) {
       linhas.push('');
-      linhas.push('➖➖➖➖➖➖➖➖➖➖');
-      linhas.push('*🚨 BORA ACELERAR, GALERA! 🚀*');
-      linhas.push('_Todos abaixo ainda nao pontuaram hoje._');
-      linhas.push('*SOCORRO, DEUS!!! 🙏*');
-      linhas.push('');
-
+      linhas.push('*AINDA NÃO PONTUARAM:*');
       zerados.forEach((v) => {
         const nome = v.nome.split(' ')[0].toUpperCase();
-        linhas.push(`${pos}º ❌❌❌ ${nome}`);
+        linhas.push(`${pos}º ${nome} - 0 cotas`);
         pos++;
       });
     }
