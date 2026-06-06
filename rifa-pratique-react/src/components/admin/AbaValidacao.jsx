@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   MagnifyingGlass, FunnelSimple, Storefront, CalendarBlank,
-  WhatsappLogo, CheckCircle, XCircle, Clock, Receipt, PencilSimple, CheckSquare, Square
+  WhatsappLogo, CheckCircle, XCircle, Clock, Receipt, PencilSimple, CheckSquare, Square, WarningCircle
 } from '@phosphor-icons/react';
 import { doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -32,6 +32,53 @@ export default function AbaValidacao({ pedidos, vendedores }) {
   const [selecionados, setSelecionados]             = useState(new Set());
   const [editandoVendedorId, setEditandoVendedorId] = useState(null);
   const [novoVendedorLocal, setNovoVendedorLocal]   = useState('');
+  
+  // Novos estados para edição de números
+  const [editandoNumerosId, setEditandoNumerosId]   = useState(null);
+  const [numerosInput, setNumerosInput]             = useState('');
+
+  // 🚀 FUNÇÃO PARA CORRIGIR NÚMEROS DUPLICADOS MANUALMENTE
+  const salvarNovosNumeros = async (id) => {
+    try {
+      const pedido = pedidos.find(p => p.id === id);
+      
+      const novosNums = numerosInput.split(',')
+        .map(n => parseInt(n.trim(), 10))
+        .filter(n => !isNaN(n));
+
+      if (novosNums.length === 0) {
+        toast.error('Insira pelo menos um número válido.');
+        return;
+      }
+
+      const batch = writeBatch(db);
+
+      // 1. Libera as travas antigas
+      if (pedido && pedido.nums) {
+        pedido.nums.forEach(num => {
+          batch.delete(doc(db, 'numerosReservados', String(num).padStart(4, '0')));
+        });
+      }
+
+      // 2. Cria as novas travas
+      novosNums.forEach(num => {
+        batch.set(
+          doc(db, 'numerosReservados', String(num).padStart(4, '0')), 
+          { status: pedido.status, pedidoId: id }, 
+          { merge: true }
+        );
+      });
+
+      // 3. Atualiza o pedido
+      batch.update(doc(db, 'pedidos', id), { nums: novosNums });
+
+      await batch.commit();
+      setEditandoNumerosId(null);
+      toast.success('Números corrigidos com sucesso!');
+    } catch (e) {
+      toast.error('Erro ao atualizar números.');
+    }
+  };
 
   // ─── AÇÕES DE BANCO DE DADOS (FIREBASE) ───────────────────────
   const salvarNovoVendedor = async (id) => {
@@ -44,30 +91,57 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
+  // ✅ CORRIGIDO: Aprovação Sincronizada (Pedido + Trava)
   const aprovarPedidoUnico = async (id) => {
     try {
-      await updateDoc(doc(db, 'pedidos', id), { status: 'pago', tsPago: Date.now() });
+      const pedido = pedidos.find(p => p.id === id);
+      const batch = writeBatch(db);
+      
+      batch.update(doc(db, 'pedidos', id), { status: 'pago', tsPago: Date.now() });
+      
+      if (pedido && pedido.nums) {
+        pedido.nums.forEach(num => {
+          batch.set(
+            doc(db, 'numerosReservados', String(num).padStart(4, '0')), 
+            { status: 'pago', pedidoId: id }, 
+            { merge: true }
+          );
+        });
+      }
+
+      await batch.commit();
       toast.success('Pedido aprovado!');
     } catch (e) {
       toast.error('Erro ao aprovar pedido.');
     }
   };
 
+  // ✅ CORRIGIDO: Expiração Sincronizada (Deleta as travas)
   const expirarPedido = async (id) => {
     if (!window.confirm('Tem certeza que deseja expirar e liberar os números?')) return;
     try {
-      await updateDoc(doc(db, 'pedidos', id), { status: 'expirado' });
+      const pedido = pedidos.find(p => p.id === id);
+      const batch = writeBatch(db);
+      
+      batch.update(doc(db, 'pedidos', id), { status: 'expirado' });
+      
+      if (pedido && pedido.nums) {
+        pedido.nums.forEach(num => {
+          batch.delete(doc(db, 'numerosReservados', String(num).padStart(4, '0')));
+        });
+      }
+
+      await batch.commit();
       toast.success('Pedido expirado e números liberados.');
     } catch (e) {
       toast.error('Erro ao expirar pedido.');
     }
   };
 
-  // 🚀 NOVO: APROVAÇÃO EM MASSA
+  // 🚀 ✅ CORRIGIDO: APROVAÇÃO EM MASSA SINCRONIZADA
   const aprovarSelecionadosMassa = async () => {
     if (selecionados.size === 0) return;
     
-    // Alerta nativo temporário para segurança máxima na ação em massa
     if (!window.confirm(`Confirma a aprovação de ${selecionados.size} pedidos de uma só vez?`)) return;
 
     const toastId = toast.loading(`Aprovando ${selecionados.size} pedidos...`);
@@ -77,14 +151,25 @@ export default function AbaValidacao({ pedidos, vendedores }) {
       const agora = Date.now();
 
       selecionados.forEach(id => {
-        const ref = doc(db, 'pedidos', id);
-        batch.update(ref, { status: 'pago', tsPago: agora });
+        const pedido = pedidos.find(p => p.id === id);
+        
+        batch.update(doc(db, 'pedidos', id), { status: 'pago', tsPago: agora });
+
+        if (pedido && pedido.nums) {
+          pedido.nums.forEach(num => {
+            batch.set(
+              doc(db, 'numerosReservados', String(num).padStart(4, '0')), 
+              { status: 'pago', pedidoId: id }, 
+              { merge: true }
+            );
+          });
+        }
       });
 
       await batch.commit();
       
       toast.success(`${selecionados.size} pedidos aprovados com sucesso!`, { id: toastId });
-      setSelecionados(new Set()); // Limpa a seleção
+      setSelecionados(new Set()); 
     } catch (error) {
       toast.error('Erro ao processar aprovação em massa.', { id: toastId });
     }
@@ -101,9 +186,9 @@ export default function AbaValidacao({ pedidos, vendedores }) {
 
   const selecionarTodos = () => {
     if (selecionados.size === pedidosFiltrados.length) {
-      setSelecionados(new Set()); // Desmarca todos
+      setSelecionados(new Set()); 
     } else {
-      setSelecionados(new Set(pedidosFiltrados.map(p => p.id))); // Marca todos visíveis
+      setSelecionados(new Set(pedidosFiltrados.map(p => p.id))); 
     }
   };
 
@@ -130,6 +215,23 @@ export default function AbaValidacao({ pedidos, vendedores }) {
 
   const mapaVendedores = Object.fromEntries(vendedores.map((v) => [v.nome, v.unidade || 'Desconhecida']));
   
+  // 🚀 RADAR DE CONFLITOS (Procura vendas duplas)
+  const encontrarConflitos = () => {
+    const mapaNumeros = {};
+    const validos = pedidos.filter(p => p.status !== 'expirado');
+    
+    validos.forEach(p => {
+      (p.nums || []).forEach(n => {
+        if (!mapaNumeros[n]) mapaNumeros[n] = [];
+        mapaNumeros[n].push({ id: p.id, nome: p.nome });
+      });
+    });
+
+    return Object.entries(mapaNumeros).filter(([_, lista]) => lista.length > 1);
+  };
+  const conflitosAtivos = encontrarConflitos();
+
+  // VARIÁVEIS DE TEMPO CORRIGIDAS (As que tinham sumido)
   const hojeTs = new Date().setHours(0, 0, 0, 0);
   const ontemTs = hojeTs - 86400000;
 
@@ -154,6 +256,24 @@ export default function AbaValidacao({ pedidos, vendedores }) {
   return (
     <div className="animate-fade-in pb-24">
       
+      {/* 🚨 ALERTA DE CONFLITOS (Só aparece se houver vendas duplas) */}
+      {conflitosAtivos.length > 0 && (
+        <div className="bg-red-600 text-white p-4 rounded-xl shadow-lg mb-6 flex flex-col gap-2 border-2 border-red-800 animate-pulse-slow">
+          <h3 className="font-black flex items-center gap-2 text-lg">
+            <WarningCircle size={24} weight="bold" /> ALERTA CRÍTICO: NÚMEROS DUPLICADOS ENCONTRADOS!
+          </h3>
+          <p className="text-sm font-medium">Alguns números foram vendidos para mais de uma pessoa antes da atualização de segurança. Corrija imediatamente editando os cards abaixo:</p>
+          <div className="mt-2 space-y-1">
+            {conflitosAtivos.map(([numero, clientes]) => (
+              <div key={numero} className="bg-red-800/50 p-2 rounded text-sm">
+                Número <strong className="text-xl px-1">{numero}</strong> está nos pedidos de: 
+                {clientes.map(c => ` ${c.nome.split(' ')[0]} (#${c.id.slice(-4)})`).join(' | ')}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ─── PAINEL DE MÉTRICAS RÁPIDAS ─── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {[
@@ -253,7 +373,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                 isSelecionado ? 'border-orange-500 shadow-md ring-1 ring-orange-500' : 'border-zinc-200 dark:border-zinc-800 hover:border-orange-300 dark:hover:border-orange-900/50'
               }`}>
                 
-                {/* 🚀 BOTÃO DE SELEÇÃO EM MASSA (Apenas visível se for PENDENTE) */}
+                {/* 🚀 BOTÃO DE SELEÇÃO EM MASSA */}
                 {p.status === 'pendente' && (
                   <button 
                     onClick={() => toggleSelecao(p.id)}
@@ -268,7 +388,6 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                 <div className="p-5 flex-1 flex flex-col">
                   <div className="flex justify-between items-start mb-3 gap-2">
                     <div className="flex-1">
-                      {/* O 'break-words' garante que o nome desça de linha em vez de cortar */}
                       <p className="font-black text-zinc-900 dark:text-white text-base leading-tight uppercase break-words" title={p.nome}>{p.nome}</p>
                       <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1 mt-1">
                         <CalendarBlank size={12} /> {fmtData(p.ts).split(' ')[0]} às {fmtData(p.ts).split(' ')[1]}
@@ -285,14 +404,12 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                       <span className="font-mono text-[11px] font-bold text-zinc-400">#{p.id.slice(-6)}</span>
                     </div>
 
-                    {/* Retornando o CPF para a tela */}
                     {p.cpf && (
                       <div className="font-medium flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
                         <Receipt size={14} /> {p.cpf}
                       </div>
                     )}
                     
-                    {/* EDIÇÃO DE VENDEDOR DIRETO NO CARD */}
                     <div className="mt-2 flex items-center justify-between gap-2 bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-900/30">
                       {editandoVendedorId === p.id ? (
                         <div className="flex w-full items-center gap-1 animate-fade-in">
@@ -307,7 +424,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                         <>
                           <p className="text-orange-600 dark:text-orange-500 font-bold text-xs flex items-center gap-1.5 truncate uppercase">
                             <Storefront size={14} className="shrink-0" /> 
-                            <span className="truncate">{p.vendedor || 'VENDA DIRETA (SEM INDICAÇÃO)'}</span>
+                            <span className="truncate">{p.vendedor || 'VENDA DIRETA'}</span>
                           </p>
                           <button onClick={() => { setEditandoVendedorId(p.id); setNovoVendedorLocal(p.vendedor || ''); }} className="text-zinc-400 hover:text-orange-600 p-1 transition-colors shrink-0">
                             <PencilSimple size={14} weight="bold" />
@@ -317,14 +434,43 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 mb-4 max-h-[60px] overflow-y-auto scrollbar-thin">
-                    {(p.nums || []).map((n) => (
-                      <span key={n} className={`text-[11px] font-mono font-black px-2 py-1 rounded border ${
-                        p.status === 'pago' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/30' :
-                        p.status === 'pendente' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-500 border-yellow-200 dark:border-yellow-800/30' :
-                        'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700'
-                      }`}>{n}</span>
-                    ))}
+                  {/* EDIÇÃO E EXIBIÇÃO DE NÚMEROS */}
+                  <div className="mb-4">
+                    {editandoNumerosId === p.id ? (
+                      <div className="flex flex-col gap-2 bg-orange-50 dark:bg-orange-900/10 p-2 rounded border border-orange-200 dark:border-orange-900/50">
+                        <label className="text-[10px] font-bold uppercase text-orange-600">Alterar Números (separe por vírgula):</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            value={numerosInput} 
+                            onChange={(e) => setNumerosInput(e.target.value)}
+                            placeholder="Ex: 12, 45, 89"
+                            className="flex-1 bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1 text-sm font-mono focus:outline-none"
+                          />
+                          <button onClick={() => salvarNovosNumeros(p.id)} className="bg-green-500 text-white p-1.5 rounded hover:bg-green-600"><CheckCircle size={16} weight="bold" /></button>
+                          <button onClick={() => setEditandoNumerosId(null)} className="bg-red-500 text-white p-1.5 rounded hover:bg-red-600"><XCircle size={16} weight="bold" /></button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap gap-1.5 max-h-[60px] overflow-y-auto scrollbar-thin flex-1">
+                          {(p.nums || []).map((n) => (
+                            <span key={n} className={`text-[11px] font-mono font-black px-2 py-1 rounded border ${
+                              p.status === 'pago' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/30' :
+                              p.status === 'pendente' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-500 border-yellow-200 dark:border-yellow-800/30' :
+                              'bg-zinc-50 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700'
+                            }`}>{n}</span>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={() => { setEditandoNumerosId(p.id); setNumerosInput((p.nums || []).join(', ')); }}
+                          className="text-zinc-400 hover:text-orange-600 p-1 bg-zinc-50 dark:bg-zinc-800 rounded transition-colors shrink-0"
+                          title="Editar Números"
+                        >
+                          <PencilSimple size={14} weight="bold" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {p.status === 'pendente' && (
