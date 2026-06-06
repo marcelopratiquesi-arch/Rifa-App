@@ -176,11 +176,19 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   // ─── EXPORTAÇÃO DE RELATÓRIOS ─────────────────────────────────
   const exportarExcel = () => {
     const dados = pedidos.map((p) => ({
-      ID: p.id, Data: fmtData(p.ts), Nome: String(p.nome).toUpperCase(), Telefone: p.tel, CPF: p.cpf || '-',
+      ID: p.id, 
+      Data: fmtData(p.ts), 
+      Nome: String(p.nome).toUpperCase(), 
+      Telefone: p.tel, 
+      CPF: p.cpf || '-',
       Vendedor: String(p.vendedor || 'Direto').toUpperCase(), 
       Unidade: String(vendedores.find(v => v.nome === p.vendedor)?.unidade || 'Venda Direta').toUpperCase(),
-      Status: p.status.toUpperCase(), Qtd: (p.nums || []).length, 'Valor R$': Number(p.valor),
+      Status: p.status.toUpperCase(), 
+      Números: (p.nums || []).join(', '), // ✅ Adicionado: Lista os números separados por vírgula
+      Qtd: (p.nums || []).length, 
+      'Valor R$': Number(p.valor),
     }));
+    
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Vendas');

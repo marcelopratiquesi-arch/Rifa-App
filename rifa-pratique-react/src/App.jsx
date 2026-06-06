@@ -9,7 +9,6 @@ import TelaAdmin from './components/TelaAdmin';
 
 // ─── CONFIGURAÇÕES GLOBAIS ────────────────────────────────
 const PRECO_UNITARIO = 10;
-const EXPIRACAO_REAL = 24 * 60 * 60 * 1000; // 24 horas
 const TOTAL_NUMEROS = 1000;
 // ─────────────────────────────────────────────────────────
 
@@ -51,6 +50,7 @@ export default function App() {
   const [usuarioId, setUsuarioId] = useState(null);
   const [tempoRestante, setTempoRestante] = useState({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
   const [rifaStatus, setRifaStatus] = useState('aberta'); // Controle Global da Rifa
+  const [numerosOcupados, setNumerosOcupados] = useState({ pagos: [], pendentes: [] });
 
   // ─── AUTENTICAÇÃO ANÔNIMA ────────────────────────────────
   useEffect(() => {
@@ -66,6 +66,26 @@ export default function App() {
     const unsub = onSnapshot(collection(db, 'pedidos'), (snapshot) => {
       const lista = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       setPedidos(lista);
+    });
+    return () => unsub();
+  }, []);
+
+  // ─── FONTE DA VERDADE: numerosReservados ────────────────
+  // O admin pode editar/expirar/aprovar números pela AbaValidacao.
+  // Todas essas ações atualizam numerosReservados via writeBatch.
+  // Escutar aqui garante que a grade reflete qualquer mudança
+  // do admin instantaneamente, sem depender de pedidos.nums.
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'numerosReservados'), (snapshot) => {
+      const pagos     = [];
+      const pendentes = [];
+      snapshot.docs.forEach(d => {
+        const data   = d.data();
+        const numero = data.numero ?? parseInt(d.id, 10);
+        if (data.status === 'pago')      pagos.push(numero);
+        if (data.status === 'reservado') pendentes.push(numero);
+      });
+      setNumerosOcupados({ pagos, pendentes });
     });
     return () => unsub();
   }, []);
@@ -106,24 +126,14 @@ export default function App() {
     return () => clearInterval(intervalo);
   }, []);
 
-  // ─── LÓGICA DE FILTRAGEM ───────────────────────────────
-  const pagos = [];
-  const pendentes = [];
-  const agora = Date.now();
-
-  pedidos.forEach((p) => {
-    if (!p.nums || !Array.isArray(p.nums)) return;
-    if (p.status === 'pago') {
-      pagos.push(...p.nums);
-    } else if (p.status === 'pendente') {
-      if (agora - p.ts < EXPIRACAO_REAL) {
-        pendentes.push(...p.nums);
-      }
-    }
-  });
-
-  const qtdPagos = pagos.length;
-  const qtdReservados = pendentes.length;
+  // ─── DERIVADOS — fonte: numerosReservados ───────────────
+  // NÃO calcular a partir de pedidos.nums: quando o admin edita
+  // um número na AbaValidacao, o pedido.nums muda mas a grade
+  // leria o número antigo como livre. numerosReservados é sempre
+  // atualizado em conjunto pelo writeBatch de todas as ações admin.
+  const { pagos, pendentes } = numerosOcupados;
+  const qtdPagos       = pagos.length;
+  const qtdReservados  = pendentes.length;
   const qtdDisponiveis = TOTAL_NUMEROS - qtdPagos - qtdReservados;
 
   const ultimosCompradores = pedidos
