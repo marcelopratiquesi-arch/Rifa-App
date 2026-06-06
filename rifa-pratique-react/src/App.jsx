@@ -75,16 +75,23 @@ export default function App() {
   // Todas essas ações atualizam numerosReservados via writeBatch.
   // Escutar aqui garante que a grade reflete qualquer mudança
   // do admin instantaneamente, sem depender de pedidos.nums.
+  // ─── FONTE DA VERDADE: numerosReservados ────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'numerosReservados'), (snapshot) => {
-      const pagos     = [];
+      const pagos = [];
       const pendentes = [];
+      
       snapshot.docs.forEach(d => {
-        const data   = d.data();
-        const numero = data.numero ?? parseInt(d.id, 10);
-        if (data.status === 'pago')      pagos.push(numero);
-        if (data.status === 'reservado') pendentes.push(numero);
+        const data = d.data();
+        // A mágica acontece aqui: garantimos que o número seja sempre String de 3 dígitos ("092")
+        // O d.id vem do "padStart(4, '0')" da AbaValidacao, então pegamos o número real e formatamos para 3
+        const numeroLimpo = parseInt(d.id, 10);
+        const numeroFormatado = String(numeroLimpo).padStart(3, '0');
+        
+        if (data.status === 'pago') pagos.push(numeroFormatado);
+        if (data.status === 'reservado') pendentes.push(numeroFormatado);
       });
+      
       setNumerosOcupados({ pagos, pendentes });
     });
     return () => unsub();
