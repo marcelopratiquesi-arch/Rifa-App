@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   CurrencyCircleDollar, Ticket, Medal, Target, 
   RocketLaunch, Storefront, DownloadSimple, FilePdf, Trophy,
@@ -10,7 +10,7 @@ import 'jspdf-autotable';
 
 // Configurações e Funções Auxiliares Isoladas
 const TOTAL_COTAS = 1000;
-const META_POR_VENDEDOR = 20; // 🎯 Meta individual ajustada para 20 cotas
+const META_POR_VENDEDOR = 20; 
 const fmtValor = (v) => Number(v).toFixed(2).replace('.', ',');
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
 
@@ -18,55 +18,52 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   
   // ─── ESTADOS DE FILTRO E ORDENAÇÃO ────────────────────────────
   const [filtroUnidade, setFiltroUnidade] = useState('Todas');
-  const [ordenacao, setOrdenacao]         = useState('cotas'); // cotas, nome, unidade, conversao, valor
-  const [ordemDirecao, setOrdemDirecao]   = useState('desc');  // asc ou desc
+  const [ordenacao, setOrdenacao]         = useState('cotas'); 
+  const [ordemDirecao, setOrdemDirecao]   = useState('desc');  
 
-  // ─── CÁLCULOS MATEMÁTICOS E FINANCEIROS ──────────────────────
-  const pedidosAprovados = pedidos.filter((p) => p.status === 'pago');
-  const pedidosPendentes = pedidos.filter((p) => p.status === 'pendente');
-  
-  const totalFaturado    = pedidosAprovados.reduce((s, p) => s + Number(p.valor), 0);
-  const totalPendente    = pedidosPendentes.reduce((s, p) => s + Number(p.valor), 0);
+  // ─── 1. PERFORMANCE: USEMEMO (Evita travamentos na interface) ──
+  const dadosMemoizados = useMemo(() => {
+    const pedidosAprovados = pedidos.filter((p) => p.status === 'pago');
+    const pedidosPendentes = pedidos.filter((p) => p.status === 'pendente');
+    
+    const totalFaturado    = pedidosAprovados.reduce((s, p) => s + Number(p.valor), 0);
+    const totalPendente    = pedidosPendentes.reduce((s, p) => s + Number(p.valor), 0);
 
-  const totalCotasVendidas   = pedidosAprovados.reduce((s, p) => s + (p.nums || []).length, 0);
-  const totalCotasReservadas = pedidosPendentes.reduce((s, p) => s + (p.nums || []).length, 0);
-  
-  const pctVendidas          = Math.min((totalCotasVendidas / TOTAL_COTAS) * 100, 100).toFixed(1);
-  const pctReservadas        = Math.min((totalCotasReservadas / TOTAL_COTAS) * 100, 100).toFixed(1);
-  const pctTotal             = Math.min(((totalCotasVendidas + totalCotasReservadas) / TOTAL_COTAS) * 100, 100).toFixed(1);
+    const totalCotasVendidas   = pedidosAprovados.reduce((s, p) => s + (p.nums || []).length, 0);
+    const totalCotasReservadas = pedidosPendentes.reduce((s, p) => s + (p.nums || []).length, 0);
+    
+    const pctVendidas          = Math.min((totalCotasVendidas / TOTAL_COTAS) * 100, 100).toFixed(1);
+    const pctReservadas        = Math.min((totalCotasReservadas / TOTAL_COTAS) * 100, 100).toFixed(1);
+    const pctTotal             = Math.min(((totalCotasVendidas + totalCotasReservadas) / TOTAL_COTAS) * 100, 100).toFixed(1);
 
-  const ticketMedio = pedidosAprovados.length > 0 ? (totalFaturado / pedidosAprovados.length) : 0;
-  const mediaCotas = pedidosAprovados.length > 0 ? (totalCotasVendidas / pedidosAprovados.length) : 0;
-  const projecaoFaturamento = totalCotasVendidas > 0 ? (totalFaturado / totalCotasVendidas) * TOTAL_COTAS : 0;
+    const ticketMedio = pedidosAprovados.length > 0 ? (totalFaturado / pedidosAprovados.length) : 0;
+    const mediaCotas = pedidosAprovados.length > 0 ? (totalCotasVendidas / pedidosAprovados.length) : 0;
+    const projecaoFaturamento = totalCotasVendidas > 0 ? (totalFaturado / totalCotasVendidas) * TOTAL_COTAS : 0;
 
-  // Descobre o pacote mais vendido
-  const calcularTopPacote = () => {
+    // Descobre o pacote mais vendido
     const contagem = {};
     pedidosAprovados.forEach(p => {
       const qtd = (p.nums || []).length;
       if (qtd > 0) contagem[qtd] = (contagem[qtd] || 0) + 1;
     });
     const ordenado = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
-    return ordenado.length > 0 ? { qtd: ordenado[0][0], vezes: ordenado[0][1] } : null;
-  };
-  const topPacote = calcularTopPacote();
+    const topPacote = ordenado.length > 0 ? { qtd: ordenado[0][0], vezes: ordenado[0][1] } : null;
 
-  // Relaciona Vendedores e Unidades
-  const mapaVendedores = Object.fromEntries(vendedores.map((v) => [v.nome, v.unidade || 'Desconhecida']));
-
-  const calcularRanking = () => {
-    const rv = {}, ru = { 'Santa Inês 1': { valor: 0, cotas: 0 }, 'Santa Inês 2': { valor: 0, cotas: 0 } };
+    // ─── 3. CORREÇÃO DE CASING (Unidades padronizadas) ────────
+    const mapaVendedores = Object.fromEntries(vendedores.map((v) => [v.nome, String(v.unidade || 'Desconhecida').trim().toUpperCase()]));
+    const rv = {};
+    const ru = { 'SANTA INÊS 1': { valor: 0, cotas: 0 }, 'SANTA INÊS 2': { valor: 0, cotas: 0 } };
     
-    // 1. INJETA TODOS OS VENDEDORES ATIVOS PRIMEIRO
+    // Injeta ativos primeiro
     vendedores.forEach(v => {
       if (v.ativo !== false) {
-        rv[v.nome] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: v.unidade || 'Santa Inês 1' };
+        rv[v.nome] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: String(v.unidade || 'SANTA INÊS 1').trim().toUpperCase() };
       }
     });
 
     pedidosAprovados.forEach((p) => {
       const vend = p.vendedor || 'Venda Direta';
-      const und  = mapaVendedores[vend] || 'Venda Direta';
+      const und  = mapaVendedores[vend] || 'VENDA DIRETA';
       if (!rv[vend]) rv[vend] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
       rv[vend].valor += Number(p.valor);
       rv[vend].cotas += (p.nums || []).length;
@@ -76,34 +73,43 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     pedidos.forEach(p => {
       const vend = p.vendedor || 'Venda Direta';
-      if (!rv[vend]) rv[vend] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[vend] || 'Venda Direta' };
+      if (!rv[vend]) rv[vend] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[vend] || 'VENDA DIRETA' };
       rv[vend].pedidosCriados += 1;
     });
 
+    const rankVend = Object.entries(rv).map(([n, d]) => ({ 
+      nome: String(n).toUpperCase(),
+      ...d, 
+      conversao: d.pedidosCriados > 0 ? Number(((d.pedidosPagos / d.pedidosCriados) * 100).toFixed(0)) : 0 
+    }));
+
+    const rankUnit = Object.entries(ru).map(([n, d]) => ({ nome: String(n).toUpperCase(), ...d })).sort((a, b) => b.valor - a.valor);
+
     return {
-      vendedores: Object.entries(rv).map(([n, d]) => ({ 
-        nome: String(n).toUpperCase(), // FORÇA MAIÚSCULO NO RANKING
-        ...d, 
-        conversao: d.pedidosCriados > 0 ? Number(((d.pedidosPagos / d.pedidosCriados) * 100).toFixed(0)) : 0 
-      })),
-      unidades:   Object.entries(ru).map(([n, d]) => ({ nome: String(n).toUpperCase(), ...d })).sort((a, b) => b.valor - a.valor),
+      totalFaturado, totalPendente, totalCotasVendidas, totalCotasReservadas,
+      pctVendidas, pctReservadas, pctTotal, ticketMedio, mediaCotas, projecaoFaturamento,
+      topPacote, rankVend, rankUnit
     };
-  };
+  }, [pedidos, vendedores]); // Só recalcula se pedidos ou vendedores mudarem!
 
-  const { vendedores: rankVend, unidades: rankUnit } = calcularRanking();
+  const {
+    totalFaturado, totalPendente, totalCotasVendidas, totalCotasReservadas,
+    pctTotal, pctVendidas, pctReservadas, ticketMedio, mediaCotas, projecaoFaturamento,
+    topPacote, rankVend, rankUnit
+  } = dadosMemoizados;
 
-  // Aplica o filtro de unidade na tabela de vendedores
+  // Aplica o filtro de unidade na tabela de vendedores de forma blindada
   const vendedoresFiltrados = filtroUnidade === 'Todas' 
     ? rankVend 
-    : rankVend.filter(v => String(v.unidade).toUpperCase() === String(filtroUnidade).toUpperCase());
+    : rankVend.filter(v => v.unidade === String(filtroUnidade).trim().toUpperCase());
 
-  // ─── LÓGICA DE ORDENAÇÃO DA TABELA (A-Z / MAIOR-MENOR) ────────
+  // ─── LÓGICA DE ORDENAÇÃO VISUAL DA TABELA ────────
   const handleSort = (coluna) => {
     if (ordenacao === coluna) {
       setOrdemDirecao(ordemDirecao === 'asc' ? 'desc' : 'asc');
     } else {
       setOrdenacao(coluna);
-      setOrdemDirecao('desc'); // Por padrão, ao clicar num número, mostra do maior pro menor
+      setOrdemDirecao('desc'); 
     }
   };
 
@@ -122,13 +128,17 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   });
 
-  // ─── MENSAGEM DO WHATSAPP (A COBRANÇA DA EQUIPE) ──────────────
+  // ─── 2. CORREÇÃO DO WHATSAPP (Ordem blindada) ──────────────
   const enviarRankingWhatsApp = () => {
-    const rankingEquipe      = vendedoresOrdenados.filter(v => v.nome !== 'VENDA DIRETA');
-    const pontuaram          = rankingEquipe.filter(v => v.cotas > 0);
-    const zerados            = rankingEquipe.filter(v => v.cotas === 0);
-    const metaGlobal         = rankingEquipe.length * META_POR_VENDEDOR;
-    const totalVendidoEquipe = rankingEquipe.reduce((acc, v) => acc + v.cotas, 0);
+    // Sempre ordena por Cotas (do maior pro menor) independente do clique na tabela
+    const rankingInquebravel = [...vendedoresFiltrados]
+      .filter(v => v.nome !== 'VENDA DIRETA')
+      .sort((a, b) => b.cotas - a.cotas || b.valor - a.valor);
+
+    const pontuaram          = rankingInquebravel.filter(v => v.cotas > 0);
+    const zerados            = rankingInquebravel.filter(v => v.cotas === 0);
+    const metaGlobal         = rankingInquebravel.length * META_POR_VENDEDOR;
+    const totalVendidoEquipe = rankingInquebravel.reduce((acc, v) => acc + v.cotas, 0);
 
     const tituloRanking = filtroUnidade === 'Todas' ? 'GERAL' : filtroUnidade.toUpperCase();
 
@@ -167,7 +177,8 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   const exportarExcel = () => {
     const dados = pedidos.map((p) => ({
       ID: p.id, Data: fmtData(p.ts), Nome: String(p.nome).toUpperCase(), Telefone: p.tel, CPF: p.cpf || '-',
-      Vendedor: String(p.vendedor || 'Direto').toUpperCase(), Unidade: String(mapaVendedores[p.vendedor] || 'Venda Direta').toUpperCase(),
+      Vendedor: String(p.vendedor || 'Direto').toUpperCase(), 
+      Unidade: String(vendedores.find(v => v.nome === p.vendedor)?.unidade || 'Venda Direta').toUpperCase(),
       Status: p.status.toUpperCase(), Qtd: (p.nums || []).length, 'Valor R$': Number(p.valor),
     }));
     const ws = XLSX.utils.json_to_sheet(dados);
@@ -183,7 +194,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       head: [['ID','DATA','NOME','VENDEDOR','UNIDADE','STATUS','QTD','VALOR']],
       body: pedidos.map((p) => [
         p.id, fmtData(p.ts), String(p.nome).toUpperCase(), String(p.vendedor || '-').toUpperCase(),
-        String(mapaVendedores[p.vendedor] || '-').toUpperCase(), p.status.toUpperCase(),
+        String(vendedores.find(v => v.nome === p.vendedor)?.unidade || '-').toUpperCase(), p.status.toUpperCase(),
         (p.nums || []).length, `R$ ${fmtValor(p.valor)}`,
       ]),
       startY: 22, styles: { fontSize: 8 }, headStyles: { fillColor: [234, 88, 12] },
