@@ -70,29 +70,38 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── FONTE DA VERDADE: numerosReservados ────────────────
-  // O admin pode editar/expirar/aprovar números pela AbaValidacao.
-  // Todas essas ações atualizam numerosReservados via writeBatch.
-  // Escutar aqui garante que a grade reflete qualquer mudança
-  // do admin instantaneamente, sem depender de pedidos.nums.
-  // ─── FONTE DA VERDADE: numerosReservados ────────────────
+  // ─── FONTE DA VERDADE: numerosReservados (COM BLINDAGEM DE DUPLICATAS) ────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'numerosReservados'), (snapshot) => {
-      const pagos = [];
-      const pendentes = [];
+      // 🚀 Usamos 'Set' em vez de Array para impedir que números duplicados entrem na contagem!
+      const pagosSet = new Set();
+      const pendentesSet = new Set();
+      const agora = Date.now();
+      const EXPIRACAO_MS = 24 * 60 * 60 * 1000; // 24 horas
       
       snapshot.docs.forEach(d => {
         const data = d.data();
-        // A mágica acontece aqui: garantimos que o número seja sempre String de 3 dígitos ("092")
-        // O d.id vem do "padStart(4, '0')" da AbaValidacao, então pegamos o número real e formatamos para 3
+        
         const numeroLimpo = parseInt(d.id, 10);
+        if (isNaN(numeroLimpo)) return; // Proteção contra lixo no banco
+        
         const numeroFormatado = String(numeroLimpo).padStart(3, '0');
         
-        if (data.status === 'pago') pagos.push(numeroFormatado);
-        if (data.status === 'reservado') pendentes.push(numeroFormatado);
+        if (data.status === 'pago') {
+          pagosSet.add(numeroFormatado);
+        } else if (data.status === 'reservado' || data.status === 'pendente') {
+          // Só conta se a trava tiver menos de 24h
+          if (agora - (data.ts || 0) < EXPIRACAO_MS) {
+            pendentesSet.add(numeroFormatado);
+          }
+        }
       });
       
-      setNumerosOcupados({ pagos, pendentes });
+      // Converte de volta para Array, garantindo que o que está PAGO nunca conte como PENDENTE (mesmo se houver erro no banco)
+      const pagosArr = Array.from(pagosSet);
+      const pendentesArr = Array.from(pendentesSet).filter(n => !pagosSet.has(n));
+      
+      setNumerosOcupados({ pagos: pagosArr, pendentes: pendentesArr });
     });
     return () => unsub();
   }, []);
@@ -134,10 +143,6 @@ export default function App() {
   }, []);
 
   // ─── DERIVADOS — fonte: numerosReservados ───────────────
-  // NÃO calcular a partir de pedidos.nums: quando o admin edita
-  // um número na AbaValidacao, o pedido.nums muda mas a grade
-  // leria o número antigo como livre. numerosReservados é sempre
-  // atualizado em conjunto pelo writeBatch de todas as ações admin.
   const { pagos, pendentes } = numerosOcupados;
   const qtdPagos       = pagos.length;
   const qtdReservados  = pendentes.length;

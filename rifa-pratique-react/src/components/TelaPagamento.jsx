@@ -57,20 +57,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   };
 
   // ─── RESERVA COM TRANSAÇÃO ATÔMICA ───────────────────────────
-  //
-  // runTransaction garante atomicidade no servidor do Firestore:
-  //   1. Todas as leituras acontecem primeiro (obrigatório pela API)
-  //   2. O servidor coloca lock nos documentos lidos
-  //   3. Verifica se os números ainda estão livres
-  //   4. SÓ ENTÃO escreve — ou aborta se algum foi tomado
-  //
-  // Não existe janela entre verificar e salvar. Dois clientes
-  // simultâneos: um passa, o outro recebe o erro de conflito.
-  //
-  // Coleção usada: numerosReservados/{numero}
-  //   → criada automaticamente na primeira transação bem-sucedida
-  //   → documento: { status: 'reservado'|'pago', pedidoId, ts }
-  //
   const handleGerarReserva = async (e) => {
     e.preventDefault();
     if (dados.cpf.length < 14 || dados.telefone.length < 14) {
@@ -85,18 +71,33 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     setACarregar(true);
     setNumerosConflito([]);
     const novoPedidoId = 'P' + Date.now();
+    const EXPIRACAO_MS = 24 * 60 * 60 * 1000; // 24 horas
 
     try {
       await runTransaction(db, async (tx) => {
 
         // ── FASE 1: leituras (todas antes de qualquer escrita) ──
-        const refs  = numeros.map(n => doc(db, 'numerosReservados', String(n).padStart(4, '0')));
+        // ✅ CORREÇÃO: Utiliza padStart(3, '0') para alinhar o formato no banco de dados
+        const refs  = numeros.map(n => doc(db, 'numerosReservados', String(n).padStart(3, '0')));
         const snaps = await Promise.all(refs.map(r => tx.get(r)));
+        const agora = Date.now();
 
         // ── FASE 2: verificação ─────────────────────────────────
         const ocupados = snaps
           .map((snap, i) => ({ snap, numero: numeros[i] }))
-          .filter(({ snap }) => snap.exists() && (snap.data().status === 'reservado' || snap.data().status === 'pago'))
+          .filter(({ snap }) => {
+            if (!snap.exists()) return false;
+            const data = snap.data();
+            
+            if (data.status === 'pago') return true; // Se tá pago, bloqueia.
+            
+            // ✅ CORREÇÃO (LAZY EXPIRATION): Só bloqueia se for reservado E estiver dentro das 24h
+            if (data.status === 'reservado' && (agora - (data.ts || 0) < EXPIRACAO_MS)) {
+              return true; 
+            }
+
+            return false; // Se for uma trava mais velha que 24h, a transação ignora e deixa o novo cliente comprar!
+          })
           .map(({ numero }) => numero);
 
         if (ocupados.length > 0) {
@@ -119,7 +120,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
           valor: valorCobrado,
           status: 'pendente',
           temComprovante: false,
-          ts: Date.now()
+          ts: agora
         });
 
         refs.forEach((ref, i) => {
@@ -127,7 +128,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
             numero:   numeros[i],
             status:   'reservado',
             pedidoId: novoPedidoId,
-            ts:       Date.now()
+            ts:       agora
           });
         });
       });

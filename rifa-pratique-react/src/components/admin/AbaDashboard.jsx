@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { 
   CurrencyCircleDollar, Ticket, Medal, Target, 
-  RocketLaunch, Storefront, DownloadSimple, FilePdf, Trophy,
+  Storefront, DownloadSimple, FilePdf, Trophy,
   WhatsappLogo, FunnelSimple, CaretUp, CaretDown
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
@@ -13,6 +13,9 @@ const TOTAL_COTAS = 1000;
 const META_POR_VENDEDOR = 20; 
 const fmtValor = (v) => Number(v).toFixed(2).replace('.', ',');
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
+
+// Limpador absoluto de strings (mata espaços invisíveis e diferenças de maiúsculas)
+const normalizarTexto = (texto) => String(texto || '').trim().toUpperCase();
 
 export default function AbaDashboard({ pedidos, vendedores }) {
   
@@ -49,48 +52,70 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     const ordenado = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
     const topPacote = ordenado.length > 0 ? { qtd: ordenado[0][0], vezes: ordenado[0][1] } : null;
 
-    // ─── 3. CORREÇÃO DE CASING (Unidades padronizadas) ────────
-    const mapaVendedores = Object.fromEntries(vendedores.map((v) => [v.nome, String(v.unidade || 'Desconhecida').trim().toUpperCase()]));
+    // ─── 3. CORREÇÃO DE CASING (Unidades padronizadas blindadas) ────────
+    const mapaVendedores = {};
+    vendedores.forEach((v) => {
+      const chaveNome = normalizarTexto(v.nome);
+      let chaveUnidade = normalizarTexto(v.unidade || 'SANTA INÊS 1');
+      // Correção rápida se alguém digitou sem acento
+      if (chaveUnidade === 'SANTA INES 1') chaveUnidade = 'SANTA INÊS 1';
+      if (chaveUnidade === 'SANTA INES 2') chaveUnidade = 'SANTA INÊS 2';
+      mapaVendedores[chaveNome] = chaveUnidade;
+    });
+
     const rv = {};
-    const ru = { 'SANTA INÊS 1': { valor: 0, cotas: 0 }, 'SANTA INÊS 2': { valor: 0, cotas: 0 } };
+    const ru = { 'SANTA INÊS 1': { valor: 0, cotas: 0 }, 'SANTA INÊS 2': { valor: 0, cotas: 0 }, 'VENDA DIRETA': { valor: 0, cotas: 0 } };
     
-    // Injeta ativos primeiro
+    // Injeta ativos primeiro para eles sempre aparecerem, mesmo zerados
     vendedores.forEach(v => {
       if (v.ativo !== false) {
-        rv[v.nome] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: String(v.unidade || 'SANTA INÊS 1').trim().toUpperCase() };
+        const chaveNome = normalizarTexto(v.nome);
+        rv[chaveNome] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[chaveNome] };
       }
     });
 
     pedidosAprovados.forEach((p) => {
-      const vend = p.vendedor || 'Venda Direta';
-      const und  = mapaVendedores[vend] || 'VENDA DIRETA';
-      if (!rv[vend]) rv[vend] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
-      rv[vend].valor += Number(p.valor);
-      rv[vend].cotas += (p.nums || []).length;
-      rv[vend].pedidosPagos += 1;
-      if (ru[und]) { ru[und].valor += Number(p.valor); ru[und].cotas += (p.nums || []).length; }
+      const vendChave = normalizarTexto(p.vendedor);
+      const chaveFinal = vendChave && mapaVendedores[vendChave] ? vendChave : (vendChave === '' ? 'VENDA DIRETA' : vendChave);
+      const und = mapaVendedores[chaveFinal] || 'VENDA DIRETA';
+      
+      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
+      
+      rv[chaveFinal].valor += Number(p.valor);
+      rv[chaveFinal].cotas += (p.nums || []).length;
+      rv[chaveFinal].pedidosPagos += 1;
+      
+      if (!ru[und]) ru[und] = { valor: 0, cotas: 0 };
+      ru[und].valor += Number(p.valor);
+      ru[und].cotas += (p.nums || []).length;
     });
 
     pedidos.forEach(p => {
-      const vend = p.vendedor || 'Venda Direta';
-      if (!rv[vend]) rv[vend] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[vend] || 'VENDA DIRETA' };
-      rv[vend].pedidosCriados += 1;
+      const vendChave = normalizarTexto(p.vendedor);
+      const chaveFinal = vendChave && mapaVendedores[vendChave] ? vendChave : (vendChave === '' ? 'VENDA DIRETA' : vendChave);
+      const und = mapaVendedores[chaveFinal] || 'VENDA DIRETA';
+
+      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
+      rv[chaveFinal].pedidosCriados += 1;
     });
 
     const rankVend = Object.entries(rv).map(([n, d]) => ({ 
-      nome: String(n).toUpperCase(),
+      nome: n,
       ...d, 
       conversao: d.pedidosCriados > 0 ? Number(((d.pedidosPagos / d.pedidosCriados) * 100).toFixed(0)) : 0 
     }));
 
-    const rankUnit = Object.entries(ru).map(([n, d]) => ({ nome: String(n).toUpperCase(), ...d })).sort((a, b) => b.valor - a.valor);
+    const rankUnit = Object.entries(ru)
+      .filter(([n]) => n === 'SANTA INÊS 1' || n === 'SANTA INÊS 2')
+      .map(([n, d]) => ({ nome: n, ...d }))
+      .sort((a, b) => b.valor - a.valor);
 
     return {
       totalFaturado, totalPendente, totalCotasVendidas, totalCotasReservadas,
       pctVendidas, pctReservadas, pctTotal, ticketMedio, mediaCotas, projecaoFaturamento,
       topPacote, rankVend, rankUnit
     };
-  }, [pedidos, vendedores]); // Só recalcula se pedidos ou vendedores mudarem!
+  }, [pedidos, vendedores]); 
 
   const {
     totalFaturado, totalPendente, totalCotasVendidas, totalCotasReservadas,
@@ -101,7 +126,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   // Aplica o filtro de unidade na tabela de vendedores de forma blindada
   const vendedoresFiltrados = filtroUnidade === 'Todas' 
     ? rankVend 
-    : rankVend.filter(v => v.unidade === String(filtroUnidade).trim().toUpperCase());
+    : rankVend.filter(v => v.unidade === normalizarTexto(filtroUnidade));
 
   // ─── LÓGICA DE ORDENAÇÃO VISUAL DA TABELA ────────
   const handleSort = (coluna) => {
@@ -130,7 +155,6 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
   // ─── 2. CORREÇÃO DO WHATSAPP (Ordem blindada) ──────────────
   const enviarRankingWhatsApp = () => {
-    // Sempre ordena por Cotas (do maior pro menor) independente do clique na tabela
     const rankingInquebravel = [...vendedoresFiltrados]
       .filter(v => v.nome !== 'VENDA DIRETA')
       .sort((a, b) => b.cotas - a.cotas || b.valor - a.valor);
@@ -140,7 +164,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     const metaGlobal         = rankingInquebravel.length * META_POR_VENDEDOR;
     const totalVendidoEquipe = rankingInquebravel.reduce((acc, v) => acc + v.cotas, 0);
 
-    const tituloRanking = filtroUnidade === 'Todas' ? 'GERAL' : filtroUnidade.toUpperCase();
+    const tituloRanking = filtroUnidade === 'Todas' ? 'GERAL' : normalizarTexto(filtroUnidade);
 
     const linhas = [];
 
@@ -173,21 +197,30 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     window.open('https://wa.me/?text=' + encodeURIComponent(linhas.join('\n')), '_blank');
   };
 
-  // ─── EXPORTAÇÃO DE RELATÓRIOS ─────────────────────────────────
+  // ─── EXPORTAÇÃO DE RELATÓRIOS BLINDADOS CONTRA BUGS DE CASING ─────────────────
+  const pegarUnidadeDoVendedor = (nomeVendedor) => {
+    const chave = normalizarTexto(nomeVendedor);
+    const found = vendedores.find(v => normalizarTexto(v.nome) === chave);
+    return found && found.unidade ? normalizarTexto(found.unidade) : 'VENDA DIRETA';
+  };
+
   const exportarExcel = () => {
-    const dados = pedidos.map((p) => ({
-      ID: p.id, 
-      Data: fmtData(p.ts), 
-      Nome: String(p.nome).toUpperCase(), 
-      Telefone: p.tel, 
-      CPF: p.cpf || '-',
-      Vendedor: String(p.vendedor || 'Direto').toUpperCase(), 
-      Unidade: String(vendedores.find(v => v.nome === p.vendedor)?.unidade || 'Venda Direta').toUpperCase(),
-      Status: p.status.toUpperCase(), 
-      Números: (p.nums || []).join(', '), // ✅ Adicionado: Lista os números separados por vírgula
-      Qtd: (p.nums || []).length, 
-      'Valor R$': Number(p.valor),
-    }));
+    const dados = pedidos.map((p) => {
+      const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
+      return {
+        ID: p.id, 
+        Data: fmtData(p.ts), 
+        Nome: normalizarTexto(p.nome), 
+        Telefone: p.tel, 
+        CPF: p.cpf || '-',
+        Vendedor: vendFinal, 
+        Unidade: pegarUnidadeDoVendedor(vendFinal),
+        Status: normalizarTexto(p.status), 
+        Números: (p.nums || []).join(', '), 
+        Qtd: (p.nums || []).length, 
+        'Valor R$': Number(p.valor),
+      };
+    });
     
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
@@ -200,11 +233,19 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     pdf.text('RELATÓRIO — RIFA PRATIQUE', 14, 15);
     pdf.autoTable({
       head: [['ID','DATA','NOME','VENDEDOR','UNIDADE','STATUS','QTD','VALOR']],
-      body: pedidos.map((p) => [
-        p.id, fmtData(p.ts), String(p.nome).toUpperCase(), String(p.vendedor || '-').toUpperCase(),
-        String(vendedores.find(v => v.nome === p.vendedor)?.unidade || '-').toUpperCase(), p.status.toUpperCase(),
-        (p.nums || []).length, `R$ ${fmtValor(p.valor)}`,
-      ]),
+      body: pedidos.map((p) => {
+        const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
+        return [
+          p.id, 
+          fmtData(p.ts), 
+          normalizarTexto(p.nome), 
+          vendFinal,
+          pegarUnidadeDoVendedor(vendFinal), 
+          normalizarTexto(p.status),
+          (p.nums || []).length, 
+          `R$ ${fmtValor(p.valor)}`
+        ];
+      }),
       startY: 22, styles: { fontSize: 8 }, headStyles: { fillColor: [234, 88, 12] },
     });
     pdf.save(`Rifa_${new Date().toISOString().slice(0,10)}.pdf`);
@@ -310,7 +351,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
         </div>
       </div>
 
-      {/* ── RANKING GERAL E CONVERSÃO COM FILTRO (A-Z E MAIOR/MENOR) ── */}
+      {/* ── RANKING GERAL E CONVERSÃO COM FILTRO ── */}
       <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
         
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -387,7 +428,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                       {ordenacao === 'cotas' && ordemDirecao === 'desc' ? (
                         i === 0 ? '🥇 1º' : i === 1 ? '🥈 2º' : i === 2 ? '🥉 3º' : `#${i + 1}`
                       ) : (
-                        `#${i + 1}` // Só exibe medalha se estiver ordenado pelo ranking oficial (Cotas)
+                        `#${i + 1}` 
                       )}
                     </td>
                     <td className="p-4 font-black text-zinc-900 dark:text-white uppercase tracking-wide text-[15px]">{v.nome}</td>
