@@ -52,7 +52,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // Corrigir números de um pedido — atualiza pedido E numerosReservados em batch
+  // ✅ CORRIGIDO: Corrigir números duplicados com Proteção Cruzada e formato 3 dígitos
   const salvarNovosNumeros = async (id) => {
     const pedido = pedidos.find(p => p.id === id);
 
@@ -70,17 +70,35 @@ export default function AbaValidacao({ pedidos, vendedores }) {
       const batch = writeBatch(db);
       const agora = Date.now();
 
-      // 1. Libera as travas antigas em numerosReservados
+      // 1. Libera as travas antigas com inteligência (protege se outro aluno tiver o mesmo número)
       if (pedido && pedido.nums) {
-        pedido.nums.forEach(num => {
-          batch.delete(doc(db, 'numerosReservados', String(num).padStart(4, '0')));
+        pedido.nums.forEach(numAntigo => {
+          const outroPedidoUsando = pedidos.find(p =>
+            p.id !== id &&
+            p.status !== 'expirado' &&
+            (p.nums || []).includes(numAntigo)
+          );
+
+          const numStr = String(numAntigo).padStart(3, '0');
+
+          if (outroPedidoUsando) {
+            // Outro aluno também tem o número! Transfere a trava para ele.
+            batch.set(
+              doc(db, 'numerosReservados', numStr),
+              { status: outroPedidoUsando.status, pedidoId: outroPedidoUsando.id, ts: outroPedidoUsando.ts || agora },
+              { merge: true }
+            );
+          } else {
+            // Ninguém mais tem o número, apaga a trava de vez
+            batch.delete(doc(db, 'numerosReservados', numStr));
+          }
         });
       }
 
-      // 2. Cria as novas travas com timestamp renovado
+      // 2. Cria as novas travas com timestamp renovado (formato 3 dígitos)
       novosNums.forEach(num => {
         batch.set(
-          doc(db, 'numerosReservados', String(num).padStart(4, '0')),
+          doc(db, 'numerosReservados', String(num).padStart(3, '0')),
           { status: pedido?.status || 'pendente', pedidoId: id, ts: agora },
           { merge: true }
         );
@@ -97,7 +115,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // Aprovar um pedido — atualiza pedido E numerosReservados em batch
+  // ✅ CORRIGIDO: Aprovar pedido (formato 3 dígitos)
   const aprovarPedidoUnico = async (id) => {
     try {
       const pedido = pedidos.find(p => p.id === id);
@@ -108,7 +126,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
       if (pedido && pedido.nums) {
         pedido.nums.forEach(num => {
           batch.set(
-            doc(db, 'numerosReservados', String(num).padStart(4, '0')),
+            doc(db, 'numerosReservados', String(num).padStart(3, '0')),
             { status: 'pago', pedidoId: id },
             { merge: true }
           );
@@ -122,7 +140,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // Expirar um pedido — DELETA as travas em numerosReservados (evita Ghost Lock)
+  // ✅ CORRIGIDO: Expirar pedido (formato 3 dígitos)
   const expirarPedido = async (id) => {
     if (!window.confirm('Tem certeza que deseja expirar e liberar os números?')) return;
     try {
@@ -131,10 +149,9 @@ export default function AbaValidacao({ pedidos, vendedores }) {
 
       batch.update(doc(db, 'pedidos', id), { status: 'expirado' });
 
-      // CRÍTICO: deletar as travas libera os números para novas transações
       if (pedido && pedido.nums) {
         pedido.nums.forEach(num => {
-          batch.delete(doc(db, 'numerosReservados', String(num).padStart(4, '0')));
+          batch.delete(doc(db, 'numerosReservados', String(num).padStart(3, '0')));
         });
       }
 
@@ -145,7 +162,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // Aprovação em massa — batch único para todos os selecionados
+  // ✅ CORRIGIDO: Aprovação em massa (formato 3 dígitos)
   const aprovarSelecionadosMassa = async () => {
     if (selecionados.size === 0) return;
     if (!window.confirm(`Confirma a aprovação de ${selecionados.size} pedidos de uma só vez?`)) return;
@@ -161,7 +178,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
         if (pedido && pedido.nums) {
           pedido.nums.forEach(num => {
             batch.set(
-              doc(db, 'numerosReservados', String(num).padStart(4, '0')),
+              doc(db, 'numerosReservados', String(num).padStart(3, '0')),
               { status: 'pago', pedidoId: id },
               { merge: true }
             );
@@ -192,7 +209,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
       "Ola " + nome + "!\n" +
       "Aqui e o Marcelo da Rifa Pratique.\n\n" +
       "Vi que voce separou os numeros *" + (p.nums || []).join(', ') + "* " +
-      "(Pedido #" + p.id + " - R$ " + fmtValor(p.valor) + ").\n\n" +
+      "(Pedido #" + p.id.slice(-6) + " - R$ " + fmtValor(p.valor) + ").\n\n" +
       "So falta o PIX para confirmar sua chance de ganhar!\n" +
       "Chave PIX: *lemosmjlp@gmail.com*\n\n" +
       "Posso te ajudar?";
@@ -251,11 +268,11 @@ export default function AbaValidacao({ pedidos, vendedores }) {
 
       {/* ALERTA DE CONFLITO — só aparece se houver números duplicados */}
       {conflitosAtivos.length > 0 && (
-        <div className="bg-red-600 text-white p-4 rounded-xl shadow-lg mb-6 flex flex-col gap-2 border-2 border-red-800">
+        <div className="bg-red-600 text-white p-4 rounded-xl shadow-lg mb-6 flex flex-col gap-2 border-2 border-red-800 animate-pulse-slow">
           <h3 className="font-black flex items-center gap-2 text-lg">
             <WarningCircle size={24} weight="bold" /> ALERTA: NÚMEROS DUPLICADOS
           </h3>
-          <p className="text-sm">Corrija clicando no lápis de números nos cards abaixo:</p>
+          <p className="text-sm font-medium">Corrija clicando no lápis de números nos cards abaixo:</p>
           <div className="mt-1 space-y-1">
             {conflitosAtivos.map(([numero, clientes]) => (
               <div key={numero} className="bg-red-800/50 p-2 rounded text-sm">
