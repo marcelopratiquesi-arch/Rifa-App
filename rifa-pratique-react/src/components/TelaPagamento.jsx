@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, CheckCircle, WhatsappLogo, UserList, Timer, WarningCircle, Storefront } from '@phosphor-icons/react';
+import { ArrowLeft, Copy, CheckCircle, WhatsappLogo, UserList, Timer, WarningCircle, Storefront, Info, CalendarPlus } from '@phosphor-icons/react';
 import { doc, updateDoc, collection, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '../services/firebase';
 
@@ -11,6 +11,9 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   const [tempoEsgotado, setTempoEsgotado] = useState(false);
   const [vendedores, setVendedores]     = useState([]);
   const [numerosConflito, setNumerosConflito] = useState([]);
+  
+  // Gatilho para fazer o botão do WhatsApp piscar
+  const [pixCopiado, setPixCopiado]     = useState(false);
 
   const [dados, setDados] = useState({
     nome: '', cpf: '', telefone: '', email: '', endereco: '', vendedor: ''
@@ -19,7 +22,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   const CHAVE_PIX             = "lemosmjlp@gmail.com";
   const NUMERO_WHATSAPP_ADMIN = "5531973483934";
 
-  // ─── VENDEDORES ATIVOS (tempo real) ──────────────────────────
+  // ─── VENDEDORES ATIVOS ──────────────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'vendedores'), (snapshot) => {
       const lista = snapshot.docs
@@ -56,7 +59,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     }));
   };
 
-  // ─── RESERVA COM TRANSAÇÃO ATÔMICA ───────────────────────────
+  // ─── RESERVA COM TRANSAÇÃO ATÔMICA E LAZY EXPIRATION ───────────
   const handleGerarReserva = async (e) => {
     e.preventDefault();
     if (dados.cpf.length < 14 || dados.telefone.length < 14) {
@@ -71,43 +74,33 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     setACarregar(true);
     setNumerosConflito([]);
     const novoPedidoId = 'P' + Date.now();
-    const EXPIRACAO_MS = 24 * 60 * 60 * 1000; // 24 horas
+    const EXPIRACAO_MS = 24 * 60 * 60 * 1000;
 
     try {
       await runTransaction(db, async (tx) => {
-
-        // ── FASE 1: leituras (todas antes de qualquer escrita) ──
-        // ✅ CORREÇÃO: Utiliza padStart(3, '0') para alinhar o formato no banco de dados
         const refs  = numeros.map(n => doc(db, 'numerosReservados', String(n).padStart(3, '0')));
         const snaps = await Promise.all(refs.map(r => tx.get(r)));
         const agora = Date.now();
 
-        // ── FASE 2: verificação ─────────────────────────────────
         const ocupados = snaps
           .map((snap, i) => ({ snap, numero: numeros[i] }))
           .filter(({ snap }) => {
             if (!snap.exists()) return false;
             const data = snap.data();
-            
-            if (data.status === 'pago') return true; // Se tá pago, bloqueia.
-            
-            // ✅ CORREÇÃO (LAZY EXPIRATION): Só bloqueia se for reservado E estiver dentro das 24h
+            if (data.status === 'pago') return true; 
             if (data.status === 'reservado' && (agora - (data.ts || 0) < EXPIRACAO_MS)) {
               return true; 
             }
-
-            return false; // Se for uma trava mais velha que 24h, a transação ignora e deixa o novo cliente comprar!
+            return false;
           })
           .map(({ numero }) => numero);
 
         if (ocupados.length > 0) {
-          // Lança para abortar a transação — nada é escrito
           const err = new Error('conflito');
           err.ocupados = ocupados;
           throw err;
         }
 
-        // ── FASE 3: escritas (só chegamos aqui se tudo livre) ───
         tx.set(doc(db, 'pedidos', novoPedidoId), {
           id: novoPedidoId,
           nome: dados.nome,
@@ -150,22 +143,33 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
 
   const copiarPix = async () => {
     await navigator.clipboard.writeText(CHAVE_PIX);
-    alert("Chave PIX copiada!");
+    setPixCopiado(true);
+    alert("✅ Chave Copiada!\n\n⚠️ IMPORTANTE: Vá ao seu banco, pague e VOLTE NESTA TELA para clicar no botão verde de enviar comprovante. Sem isso, sua reserva é cancelada!");
   };
 
+  // 🚀 MENSAGEM LIMPA (SEM EMOJIS)
   const handleEnviarWhatsApp = async () => {
     setACarregar(true);
     try {
       await updateDoc(doc(db, 'pedidos', pedidoIdGerado), { temComprovante: true });
       const valor = Number(valorCobrado).toFixed(2).replace('.', ',');
-      const msg =
-        "Ola Marcelo!\n" +
-        "Sou *" + dados.nome + "* e acabei de fazer minha reserva na Rifa Pratique.\n\n" +
-        "*Pedido:* #" + pedidoIdGerado + "\n" +
-        "*CPF:* " + dados.cpf + "\n" +
-        "*Numeros reservados:* " + numeros.join(", ") + "\n" +
-        "*Valor pago:* R$ " + valor + "\n\n" +
-        "Segue o comprovante do PIX em anexo.";
+      
+      const msg = 
+        `Olá Marcelo!\n` +
+        `Sou *${dados.nome}* e acabei de fazer minha reserva na Rifa Pratique.\n\n` +
+        `*DADOS DA RESERVA*\n` +
+        `- *Pedido:* #${pedidoIdGerado}\n` +
+        `- *Nome:* ${dados.nome}\n` +
+        `- *CPF:* ${dados.cpf}\n` +
+        `- *Indicado por:* ${dados.vendedor}\n` +
+        `- *Números:* ${numeros.join(", ")}\n` +
+        `- *Valor:* R$ ${valor}\n\n` +
+        `*SOBRE O SORTEIO:*\n` +
+        `- *Data:* 22/07 às 20h\n` +
+        `- *Local:* Pratique Fitness Santa Inês II\n` +
+        `- *Endereço:* Av. José Cândido da Silveira, 2790\n\n` +
+        `Segue em anexo o meu comprovante PIX!`;
+
       window.open(`https://wa.me/${NUMERO_WHATSAPP_ADMIN}?text=${encodeURIComponent(msg)}`, '_blank');
       setEtapa('sucesso');
     } finally {
@@ -173,7 +177,17 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     }
   };
 
-  // ─── RENDER ──────────────────────────────────────────────────
+  // 🚀 FUNÇÃO PARA ADICIONAR AO GOOGLE CALENDAR
+  const handleSalvarAgenda = () => {
+    const titulo = encodeURIComponent('Sorteio Oficial - Rifa Pratique');
+    const detalhes = encodeURIComponent('Chegou o grande dia do sorteio oficial da Rifa Pratique! Boa sorte!');
+    const local = encodeURIComponent('Pratique Fitness Santa Inês II - Av. José Cândido da Silveira, 2790');
+    // Data: 22 de Julho de 2026 às 20h00 BRT (UTC-3) -> 23h00 UTC
+    const datas = '20260722T230000Z/20260723T000000Z'; 
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titulo}&dates=${datas}&details=${detalhes}&location=${local}`;
+    window.open(url, '_blank');
+  };
+
   return (
     <div className="max-w-md mx-auto bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-xl transition-colors">
 
@@ -191,7 +205,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
             Total: <span className="text-green-600 font-black text-lg">R$ {valorCobrado.toFixed(2)}</span>
           </p>
 
-          {/* Aviso de conflito — aparece se a transação detectou colisão */}
           {numerosConflito.length > 0 && (
             <div className="bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 rounded-lg p-4 mb-4 text-center">
               <p className="text-red-700 dark:text-red-300 font-bold text-sm mb-1">
@@ -246,7 +259,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
 
             <button type="submit" disabled={aCarregar}
               className="w-full bg-orange-600 hover:bg-orange-500 disabled:bg-zinc-400 text-white font-bold py-3.5 rounded-lg mt-6 shadow-lg text-lg">
-              {aCarregar ? 'Verificando disponibilidade...' : 'Prosseguir para o PIX'}
+              {aCarregar ? 'Verificando...' : 'Prosseguir para o PIX'}
             </button>
 
             {numerosConflito.length > 0 && (
@@ -259,54 +272,70 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
         </>
       )}
 
-      {/* ══════════ ETAPA 2: PIX ══════════ */}
+      {/* ══════════ ETAPA 2: PIX E ENVIO DE COMPROVANTE ══════════ */}
       {etapa === 'pagamento_pix' && (
-        <div className="text-center animate-fade-in">
+        <div className="animate-fade-in">
+          
+          <div className="bg-red-600 border-2 border-red-800 rounded-xl p-4 mb-6 shadow-lg relative overflow-hidden text-center">
+             <div className="absolute top-0 right-0 p-2 opacity-20"><WarningCircle size={64} weight="fill" /></div>
+             <p className="text-white font-black uppercase text-sm tracking-widest mb-1 relative z-10 flex justify-center items-center gap-2">
+               <Info size={18} weight="bold" /> Atenção!
+             </p>
+             <p className="text-red-100 font-medium text-sm relative z-10">
+               Sua reserva <strong>SÓ SERÁ CONFIRMADA</strong> após você enviar o comprovante no WhatsApp. Siga os 2 passos abaixo:
+             </p>
+          </div>
+
           {!tempoEsgotado ? (
-            <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-lg p-3 mb-6 flex flex-col items-center">
-              <span className="flex items-center gap-2 text-red-600 font-bold mb-1">
-                <Timer size={20} weight="fill" /> Pagamento Pendente
-              </span>
-              <span className="text-red-800 dark:text-red-200 text-sm">
-                Pague em <strong className="text-xl text-white bg-red-600 px-2 rounded mx-1">{tempoFormatado}</strong> para não perder!
-              </span>
+            <div className="flex justify-center items-center gap-2 text-zinc-600 dark:text-zinc-400 mb-6 font-bold text-sm">
+              <Timer size={18} /> Pague e confirme em: <span className="text-red-500 text-lg font-black">{tempoFormatado}</span>
             </div>
           ) : (
-            <div className="bg-orange-50 dark:bg-orange-950/50 border border-orange-300 dark:border-orange-900 rounded-lg p-3 mb-6 flex flex-col items-center">
-              <span className="flex items-center gap-2 text-orange-600 font-bold mb-1">
-                <WarningCircle size={24} weight="fill" /> Tempo Esgotado!
-              </span>
-              <span className="text-orange-800 dark:text-orange-200 text-sm">
-                Sua reserva pode expirar. <strong>Pague agora</strong> para garantir!
-              </span>
+            <div className="text-center text-red-500 font-bold mb-6 flex flex-col items-center">
+              <WarningCircle size={24} weight="fill" /> Tempo esgotado! Corra para não perder a reserva.
             </div>
           )}
 
-          <h2 className="text-2xl font-bold text-zinc-900 dark:text-white mb-2">Efetue o Pagamento</h2>
-          <div className="bg-zinc-50 dark:bg-zinc-950 p-5 rounded-lg border border-zinc-200 dark:border-zinc-800 mb-8">
-            <p className="text-sm text-zinc-500 mb-1">Valor a pagar agora:</p>
-            <p className="text-3xl font-black text-green-600 mb-6">R$ {valorCobrado.toFixed(2)}</p>
-            <p className="text-sm text-zinc-500 mb-1">Chave PIX</p>
-            <p className="text-lg font-bold text-zinc-900 dark:text-white mb-3 break-all">{CHAVE_PIX}</p>
+          <div className={`p-5 rounded-xl border-2 transition-all duration-300 mb-4 ${pixCopiado ? 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 opacity-60' : 'bg-orange-50 dark:bg-orange-950/20 border-orange-500 shadow-md'}`}>
+            <h3 className="font-black text-orange-600 dark:text-orange-500 uppercase tracking-widest text-xs mb-3">1º Passo: Pagar o PIX</h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-1">Valor a transferir:</p>
+            <p className="text-3xl font-black text-green-600 mb-4">R$ {valorCobrado.toFixed(2)}</p>
+            
             <button onClick={copiarPix}
-              className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 text-zinc-900 dark:text-white font-bold py-3 px-4 rounded-lg w-full flex justify-center gap-2 border">
-              <Copy size={18} /> Copiar Chave
+              className="bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-bold py-3 px-4 rounded-lg w-full flex justify-center gap-2 transition-all">
+              <Copy size={18} weight="bold" /> Copiar Chave PIX
             </button>
           </div>
-          <button onClick={handleEnviarWhatsApp} disabled={aCarregar}
-            className="w-full bg-[#25D366] hover:bg-[#1ebe57] text-white font-bold py-4 rounded-lg flex justify-center gap-2 text-lg shadow-lg">
-            <WhatsappLogo size={28} weight="fill" /> Enviar Comprovante
-          </button>
+
+          <div className={`p-5 rounded-xl border-2 transition-all duration-300 ${pixCopiado ? 'bg-[#25D366]/10 border-[#25D366] shadow-lg shadow-[#25D366]/20' : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
+            <h3 className="font-black text-[#25D366] uppercase tracking-widest text-xs mb-3">2º Passo: Confirmar Reserva</h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
+              Já fez o pagamento no app do banco? Volte aqui e clique no botão abaixo.
+            </p>
+            
+            <button onClick={handleEnviarWhatsApp} disabled={aCarregar}
+              className={`w-full text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 text-base transition-all ${pixCopiado ? 'bg-[#25D366] hover:bg-[#1ebe57] animate-pulse scale-[1.02] shadow-xl shadow-[#25D366]/40' : 'bg-zinc-400 dark:bg-zinc-700 hover:bg-[#25D366]'}`}>
+              <WhatsappLogo size={24} weight="fill" /> Enviar Comprovante Agora
+            </button>
+          </div>
         </div>
       )}
 
       {/* ══════════ ETAPA 3: SUCESSO ══════════ */}
       {etapa === 'sucesso' && (
         <div className="text-center animate-fade-in py-8">
-          <CheckCircle size={72} weight="fill" className="text-green-500 mx-auto mb-6" />
-          <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-3">Tudo Certo!</h2>
+          <CheckCircle size={72} weight="fill" className="text-green-500 mx-auto mb-4" />
+          <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">Tudo Certo!</h2>
+          <p className="text-zinc-500 dark:text-zinc-400 mb-8">Comprovante enviado. Aguarde nossa validação.</p>
+          
+          {/* 🚀 NOVO BOTÃO DE CALENDÁRIO */}
+          <button onClick={handleSalvarAgenda}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2 mb-4 shadow-lg shadow-blue-600/20">
+            <CalendarPlus size={24} weight="bold" /> Salvar Sorteio na Agenda
+          </button>
+
           <button onClick={onSucesso}
-            className="w-full bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white font-bold py-3 rounded-lg">
+            className="w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-3 rounded-lg transition-colors">
             Voltar ao Início
           </button>
         </div>
