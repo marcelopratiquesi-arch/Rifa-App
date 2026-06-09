@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { 
   CurrencyCircleDollar, Ticket, Medal, Target, 
   Storefront, DownloadSimple, FilePdf, Trophy,
-  WhatsappLogo, FunnelSimple, CaretUp, CaretDown
+  WhatsappLogo, FunnelSimple, CaretUp, CaretDown, Fire, X
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -23,6 +23,10 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   const [filtroUnidade, setFiltroUnidade] = useState('Todas');
   const [ordenacao, setOrdenacao]         = useState('cotas'); 
   const [ordemDirecao, setOrdemDirecao]   = useState('desc');  
+
+  // 🚀 ESTADOS DO PREVIEW DO WHATSAPP
+  const [modalWhatsAppOpen, setModalWhatsAppOpen] = useState(false);
+  const [mensagemZap, setMensagemZap]             = useState('');
 
   // ─── 1. PERFORMANCE: USEMEMO (Evita travamentos na interface) ──
   const dadosMemoizados = useMemo(() => {
@@ -111,15 +115,13 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       .sort((a, b) => b.valor - a.valor);
 
     return {
-      totalFaturado, totalPendente, totalCotasVendidas, totalCotasReservadas,
-      pctVendidas, pctReservadas, pctTotal, ticketMedio, mediaCotas, projecaoFaturamento,
+      totalFaturado, totalPendente, ticketMedio, mediaCotas, projecaoFaturamento,
       topPacote, rankVend, rankUnit
     };
   }, [pedidos, vendedores]); 
 
   const {
-    totalFaturado, totalPendente, totalCotasVendidas, totalCotasReservadas,
-    pctTotal, pctVendidas, pctReservadas, ticketMedio, mediaCotas, projecaoFaturamento,
+    totalFaturado, totalPendente, ticketMedio, mediaCotas, projecaoFaturamento,
     topPacote, rankVend, rankUnit
   } = dadosMemoizados;
 
@@ -153,8 +155,28 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   });
 
-  // ─── 2. CORREÇÃO DO WHATSAPP (Ordem blindada) ──────────────
-  const enviarRankingWhatsApp = () => {
+  // EXTRAINDO OS 3 MELHORES VENDEDORES PARA O PÓDIO
+  const top3Vendedores = useMemo(() => {
+    return [...vendedoresFiltrados]
+      .filter(v => v.nome !== 'VENDA DIRETA' && v.cotas > 0)
+      .sort((a, b) => b.cotas - a.cotas || b.valor - a.valor)
+      .slice(0, 3);
+  }, [vendedoresFiltrados]);
+
+  // CÁLCULO DA "AMEAÇA" ENTRE AS UNIDADES
+  let msgBatalhaUnidades = null;
+  if (rankUnit.length >= 2 && rankUnit[0].valor > 0) {
+    const diferencaValor = rankUnit[0].valor - rankUnit[1].valor;
+    if (diferencaValor > 0) {
+      const cotasAprox = Math.ceil(diferencaValor / 10);
+      msgBatalhaUnidades = `🔥 Faltam apenas R$ ${fmtValor(diferencaValor)} (${cotasAprox} cotas) para a unidade ${rankUnit[1].nome} virar o jogo!`;
+    } else {
+      msgBatalhaUnidades = `🔥 EMPATE TÉCNICO! Quem vai desempatar essa guerra?`;
+    }
+  }
+
+  // ─── LÓGICA DO PREVIEW DO WHATSAPP ──────────────────────
+  const prepararRankingWhatsApp = () => {
     const rankingInquebravel = [...vendedoresFiltrados]
       .filter(v => v.nome !== 'VENDA DIRETA')
       .sort((a, b) => b.cotas - a.cotas || b.valor - a.valor);
@@ -194,10 +216,16 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       });
     }
 
-    window.open('https://wa.me/?text=' + encodeURIComponent(linhas.join('\n')), '_blank');
+    // Carrega o texto pro estado e abre o Modal
+    setMensagemZap(linhas.join('\n'));
+    setModalWhatsAppOpen(true);
   };
 
-  // ─── EXPORTAÇÃO DE RELATÓRIOS BLINDADOS CONTRA BUGS DE CASING ─────────────────
+  const confirmarEnvioWhatsApp = () => {
+    window.open('https://wa.me/?text=' + encodeURIComponent(mensagemZap), '_blank');
+    setModalWhatsAppOpen(false);
+  };
+
   const pegarUnidadeDoVendedor = (nomeVendedor) => {
     const chave = normalizarTexto(nomeVendedor);
     const found = vendedores.find(v => normalizarTexto(v.nome) === chave);
@@ -300,11 +328,11 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       {/* ── BATALHA E FLUXO DE CAIXA ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col">
           <h3 className="font-bold mb-6 flex items-center gap-2 text-xl text-zinc-900 dark:text-white uppercase">
             <Medal className="text-orange-500" size={24} weight="fill" /> Batalha das Unidades
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 flex-1">
             {['SANTA INÊS 1', 'SANTA INÊS 2'].map((unidade) => {
               const dados     = rankUnit.find((u) => u.nome === unidade);
               const liderando = rankUnit[0]?.nome === unidade && rankUnit[0]?.valor > 0;
@@ -323,6 +351,14 @@ export default function AbaDashboard({ pedidos, vendedores }) {
               );
             })}
           </div>
+          
+          {msgBatalhaUnidades && (
+            <div className="mt-6 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 p-3 rounded-lg text-center animate-fade-in">
+              <p className="text-sm font-bold text-red-600 dark:text-red-400 flex items-center justify-center gap-1">
+                <Fire weight="fill" /> {msgBatalhaUnidades}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -344,7 +380,8 @@ export default function AbaDashboard({ pedidos, vendedores }) {
             <button onClick={exportarPDF} className="flex-1 bg-[#E53E3E] hover:bg-[#c53030] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm uppercase tracking-wide">
               <FilePdf size={20} weight="bold" /> RELATÓRIO PDF
             </button>
-            <button onClick={enviarRankingWhatsApp} className="flex-1 bg-[#25D366] hover:bg-[#1ebe57] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm shadow-md uppercase tracking-wide">
+            {/* 🚀 BOTÃO ALTERADO PARA CHAMAR O PREVIEW */}
+            <button onClick={prepararRankingWhatsApp} className="flex-1 bg-[#25D366] hover:bg-[#1ebe57] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm shadow-md uppercase tracking-wide">
               <WhatsappLogo size={20} weight="fill" /> ENVIAR GRUPO
             </button>
           </div>
@@ -373,6 +410,37 @@ export default function AbaDashboard({ pedidos, vendedores }) {
             </select>
           </div>
         </div>
+
+        {top3Vendedores.length > 0 && (
+          <div className="mb-10 mt-4 flex flex-row justify-center items-end gap-2 sm:gap-4 px-2">
+            {/* 2º LUGAR */}
+            {top3Vendedores[1] && (
+              <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-zinc-400 h-[120px] sm:h-[140px] shadow-sm">
+                <span className="text-2xl sm:text-3xl mb-1 drop-shadow-md">🥈</span>
+                <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[1].nome.split(' ')[0]}</span>
+                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[1].cotas} COTAS</span>
+              </div>
+            )}
+            
+            {/* 1º LUGAR */}
+            {top3Vendedores[0] && (
+              <div className="flex-1 max-w-[170px] bg-gradient-to-t from-orange-50 to-white dark:from-orange-900/20 dark:to-zinc-900 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-yellow-500 h-[150px] sm:h-[180px] shadow-xl z-10 transform -translate-y-2">
+                <span className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">🥇</span>
+                <span className="font-black text-orange-600 dark:text-orange-500 text-sm sm:text-base text-center truncate w-full uppercase">{top3Vendedores[0].nome.split(' ')[0]}</span>
+                <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black">{top3Vendedores[0].cotas} COTAS</span>
+              </div>
+            )}
+            
+            {/* 3º LUGAR */}
+            {top3Vendedores[2] && (
+              <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-orange-700 h-[100px] sm:h-[120px] shadow-sm">
+                <span className="text-xl sm:text-2xl mb-1 drop-shadow-md">🥉</span>
+                <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[2].nome.split(' ')[0]}</span>
+                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[2].cotas} COTAS</span>
+              </div>
+            )}
+          </div>
+        )}
         
         <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="w-full text-left text-sm whitespace-nowrap">
@@ -424,12 +492,8 @@ export default function AbaDashboard({ pedidos, vendedores }) {
               ) : (
                 vendedoresOrdenados.map((v, i) => (
                   <tr key={v.nome} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-orange-50 dark:hover:bg-orange-900/10 transition-colors group">
-                    <td className="p-4 font-black text-orange-500 text-lg">
-                      {ordenacao === 'cotas' && ordemDirecao === 'desc' ? (
-                        i === 0 ? '🥇 1º' : i === 1 ? '🥈 2º' : i === 2 ? '🥉 3º' : `#${i + 1}`
-                      ) : (
-                        `#${i + 1}` 
-                      )}
+                    <td className="p-4 font-black text-zinc-500 dark:text-zinc-400 text-base">
+                      #{i + 1}
                     </td>
                     <td className="p-4 font-black text-zinc-900 dark:text-white uppercase tracking-wide text-[15px]">{v.nome}</td>
                     <td className="p-4 text-xs font-black text-zinc-400 uppercase tracking-widest">{v.unidade}</td>
@@ -439,10 +503,15 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-3">
                         <span className="font-black text-sm w-12 text-right">{v.conversao}%</span>
-                        <div className="w-20 h-2.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden shadow-inner">
+                        <div className="relative w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden shadow-inner">
                           <div 
                             className={`h-full ${Number(v.conversao) >= 70 ? 'bg-green-500' : Number(v.conversao) >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} 
                             style={{ width: `${Math.min(v.conversao, 100)}%` }}
+                          />
+                          <div 
+                            className="absolute top-0 bottom-0 w-[2px] bg-zinc-900 dark:bg-zinc-300 z-10 opacity-70" 
+                            style={{ left: '70%' }} 
+                            title="Meta Esperada: 70%" 
                           />
                         </div>
                       </div>
@@ -455,6 +524,56 @@ export default function AbaDashboard({ pedidos, vendedores }) {
           </table>
         </div>
       </div>
+
+      {/* 🚀 MODAL DE PREVIEW DO WHATSAPP */}
+      {modalWhatsAppOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col transform transition-all">
+            
+            {/* Header do Modal estilo WhatsApp */}
+            <div className="bg-[#25D366] p-4 flex justify-between items-center text-white">
+              <h3 className="font-black flex items-center gap-2">
+                <WhatsappLogo size={24} weight="fill" /> Preview da Mensagem
+              </h3>
+              <button 
+                onClick={() => setModalWhatsAppOpen(false)} 
+                className="hover:bg-white/20 p-1.5 rounded-full transition-colors"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
+            
+            <div className="p-6 flex flex-col gap-4">
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
+                Você pode editar a mensagem ou adicionar um recado antes de enviar para o grupo:
+              </p>
+              
+              <textarea
+                className="w-full h-64 bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-xl p-4 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366] resize-none scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700"
+                value={mensagemZap}
+                onChange={(e) => setMensagemZap(e.target.value)}
+              />
+              
+              <div className="flex gap-3 mt-2">
+                <button 
+                  onClick={() => setModalWhatsAppOpen(false)} 
+                  className="flex-1 py-3.5 font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmarEnvioWhatsApp} 
+                  className="flex-[2] py-3.5 font-black text-white bg-[#25D366] hover:bg-[#1ebe57] rounded-xl transition-colors shadow-lg shadow-[#25D366]/30 flex items-center justify-center gap-2"
+                >
+                  <WhatsappLogo size={22} weight="bold" /> Enviar Agora
+                </button>
+              </div>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
