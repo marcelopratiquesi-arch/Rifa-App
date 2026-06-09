@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
-import { Sun, Moon, LockKey, CalendarBlank, MapPin, Users, Ticket, Clock, CheckCircle, Trophy } from '@phosphor-icons/react';
+import { Sun, Moon, LockKey, CalendarBlank, MapPin, Users, Ticket, Clock, CheckCircle, Trophy, Lightning, Fire } from '@phosphor-icons/react';
 import { auth, db } from './services/firebase';
 import GradeNumeros from './components/GradeNumeros';
 import TelaPagamento from './components/TelaPagamento';
@@ -49,8 +49,11 @@ export default function App() {
   const [pedidos, setPedidos] = useState([]);
   const [usuarioId, setUsuarioId] = useState(null);
   const [tempoRestante, setTempoRestante] = useState({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
-  const [rifaStatus, setRifaStatus] = useState('aberta'); // Controle Global da Rifa
+  const [rifaStatus, setRifaStatus] = useState('aberta'); 
   const [numerosOcupados, setNumerosOcupados] = useState({ pagos: [], pendentes: [] });
+  
+  // 🚀 ESTADO: Prova Social Ao Vivo
+  const [notificacaoAtiva, setNotificacaoAtiva] = useState(null);
 
   // ─── AUTENTICAÇÃO ANÔNIMA ────────────────────────────────
   useEffect(() => {
@@ -70,34 +73,30 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── FONTE DA VERDADE: numerosReservados (COM BLINDAGEM DE DUPLICATAS) ────────────────
+  // ─── FONTE DA VERDADE: numerosReservados ────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'numerosReservados'), (snapshot) => {
-      // 🚀 Usamos 'Set' em vez de Array para impedir que números duplicados entrem na contagem!
       const pagosSet = new Set();
       const pendentesSet = new Set();
       const agora = Date.now();
-      const EXPIRACAO_MS = 24 * 60 * 60 * 1000; // 24 horas
+      const EXPIRACAO_MS = 24 * 60 * 60 * 1000; 
       
       snapshot.docs.forEach(d => {
         const data = d.data();
-        
         const numeroLimpo = parseInt(d.id, 10);
-        if (isNaN(numeroLimpo)) return; // Proteção contra lixo no banco
+        if (isNaN(numeroLimpo)) return; 
         
         const numeroFormatado = String(numeroLimpo).padStart(3, '0');
         
         if (data.status === 'pago') {
           pagosSet.add(numeroFormatado);
         } else if (data.status === 'reservado' || data.status === 'pendente') {
-          // Só conta se a trava tiver menos de 24h
           if (agora - (data.ts || 0) < EXPIRACAO_MS) {
             pendentesSet.add(numeroFormatado);
           }
         }
       });
       
-      // Converte de volta para Array, garantindo que o que está PAGO nunca conte como PENDENTE (mesmo se houver erro no banco)
       const pagosArr = Array.from(pagosSet);
       const pendentesArr = Array.from(pendentesSet).filter(n => !pagosSet.has(n));
       
@@ -106,7 +105,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── ESCUTA STATUS GLOBAL DA RIFA (TRAVA DE SORTEIO) ─────
+  // ─── ESCUTA STATUS GLOBAL DA RIFA ────────────────────────
   useEffect(() => {
     const docRef = doc(db, 'configuracoes', 'sistema');
     const unsub = onSnapshot(docRef, (docSnap) => {
@@ -148,13 +147,30 @@ export default function App() {
   const qtdReservados  = pendentes.length;
   const qtdDisponiveis = TOTAL_NUMEROS - qtdPagos - qtdReservados;
 
+  // Cálculo da Barra de Progresso (Termômetro)
+  const pctVendida = ((qtdPagos + qtdReservados) / TOTAL_NUMEROS) * 100;
+
   const ultimosCompradores = pedidos
     .filter((p) => p.status === 'pago' && p.nums && p.nums.length > 0)
     .sort((a, b) => (b.tsPago || b.ts) - (a.tsPago || a.ts))
-    .slice(0, 3);
+    .slice(0, 10); 
+
+  // EFEITO: PROVA SOCIAL AO VIVO
+  useEffect(() => {
+    if (ultimosCompradores.length === 0 || telaAtiva !== 'comprar' || modoCompra !== 'grelha') return;
+    
+    const interval = setInterval(() => {
+      const randomBuyer = ultimosCompradores[Math.floor(Math.random() * ultimosCompradores.length)];
+      setNotificacaoAtiva(randomBuyer);
+      
+      setTimeout(() => setNotificacaoAtiva(null), 4000);
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, [ultimosCompradores, telaAtiva, modoCompra]);
 
   const alternarNumero = useCallback((num) => {
-    if (rifaStatus !== 'aberta') return; // Trava o clique se a rifa estiver fechada
+    if (rifaStatus !== 'aberta') return; 
     setNumerosSelecionados((prev) =>
       prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num]
     );
@@ -196,12 +212,28 @@ export default function App() {
     setNumerosSelecionados(prev => [...prev, ...misturados.slice(0, quantidade)]);
   };
 
-  // Só mostra a barra flutuante se a rifa estiver aberta
   const mostrarBarraRodape = telaAtiva === 'comprar' && modoCompra === 'grelha' && numerosSelecionados.length > 0 && rifaStatus === 'aberta';
 
   return (
-    <div className={`${temaEscuro ? 'dark' : ''} antialiased selection:bg-orange-500/30`}>
-      <div className="min-h-screen bg-[#F8F9FA] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-100 transition-colors duration-500 font-sans pb-24">
+    <div className={`${temaEscuro ? 'dark' : ''} antialiased selection:bg-orange-500/30 overflow-hidden`}>
+      <div className="min-h-screen bg-[#F8F9FA] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-100 transition-colors duration-500 font-sans pb-24 relative">
+
+        {/* NOTIFICAÇÃO FLUTUANTE (PROVA SOCIAL AO VIVO) */}
+        {notificacaoAtiva && (
+          <div className="fixed bottom-24 left-4 sm:bottom-6 sm:left-6 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xl p-4 rounded-2xl flex items-center gap-4 animate-slide-up max-w-[300px]">
+            <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-full flex-shrink-0">
+              <Fire size={24} weight="fill" className="text-green-600 dark:text-green-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 leading-tight">
+                <strong className="text-zinc-900 dark:text-white uppercase">{mascararNome(notificacaoAtiva.nome)}</strong> acabou de garantir
+              </p>
+              <p className="text-base font-black text-orange-500 tracking-tight mt-0.5">
+                {notificacaoAtiva.nums.length} Cota{notificacaoAtiva.nums.length > 1 ? 's' : ''}!
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* CABEÇALHO */}
         <nav className="sticky top-0 z-50 bg-white/80 dark:bg-[#09090B]/80 backdrop-blur-lg border-b border-zinc-200/80 dark:border-zinc-800/80 px-4 py-3 flex justify-between items-center transition-colors">
@@ -260,31 +292,52 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="bg-black/40 backdrop-blur-md border border-white/10 p-5 rounded-2xl shrink-0 w-full md:w-auto">
-                    <div className="flex items-center justify-center gap-2 mb-4">
-                      <Clock size={16} className="text-orange-500" />
-                      <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">O tempo está acabando</span>
-                    </div>
-                    <div className="flex justify-center gap-3 sm:gap-4 text-center">
-                      {[
-                        { valor: tempoRestante.dias, label: 'Dias' },
-                        { valor: tempoRestante.horas, label: 'Horas' },
-                        { valor: tempoRestante.minutos, label: 'Min' },
-                        { valor: tempoRestante.segundos, label: 'Seg' }
-                      ].map((item, idx) => (
-                        <div key={idx} className="flex flex-col items-center">
-                          <div className="bg-white/5 border border-white/10 w-12 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center shadow-inner">
-                            <span className="text-2xl sm:text-3xl font-black text-white font-mono">{String(item.valor).padStart(2, '0')}</span>
+                  <div className="w-full md:w-auto flex flex-col gap-4">
+                    <div className="bg-black/40 backdrop-blur-md border border-white/10 p-5 rounded-2xl shrink-0">
+                      <div className="flex items-center justify-center gap-2 mb-4">
+                        <Clock size={16} className="text-orange-500" />
+                        <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">O tempo está acabando</span>
+                      </div>
+                      <div className="flex justify-center gap-3 sm:gap-4 text-center">
+                        {[
+                          { valor: tempoRestante.dias, label: 'Dias' },
+                          { valor: tempoRestante.horas, label: 'Horas' },
+                          { valor: tempoRestante.minutos, label: 'Min' },
+                          { valor: tempoRestante.segundos, label: 'Seg' }
+                        ].map((item, idx) => (
+                          <div key={idx} className="flex flex-col items-center">
+                            <div className="bg-white/5 border border-white/10 w-12 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center shadow-inner">
+                              <span className="text-2xl sm:text-3xl font-black text-white font-mono">{String(item.valor).padStart(2, '0')}</span>
+                            </div>
+                            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mt-2">{item.label}</span>
                           </div>
-                          <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mt-2">{item.label}</span>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* TERMÔMETRO DE ESCASSEZ */}
+                    <div className="bg-black/40 backdrop-blur-md border border-white/10 p-4 rounded-2xl">
+                      <div className="flex justify-between items-end mb-2">
+                        <span className="text-xs font-bold text-orange-400 uppercase flex items-center gap-1">
+                          <Lightning weight="fill" /> Ação entre amigos
+                        </span>
+                        <span className="text-xs font-black text-white">{pctVendida.toFixed(1)}% Esgotada</span>
+                      </div>
+                      <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-orange-600 via-orange-400 to-yellow-400 transition-all duration-1000" 
+                          style={{ width: `${pctVendida}%` }} 
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-2 text-center uppercase tracking-widest">
+                        Apenas <strong>{qtdDisponiveis} cotas</strong> restantes!
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* CONTROLE DE EXIBIÇÃO: SE A RIFA NÃO ESTIVER ABERTA, MOSTRA O AVISO E ESCONDE OS NÚMEROS */}
+              {/* CONTROLE DE EXIBIÇÃO: SE A RIFA NÃO ESTIVER ABERTA */}
               {rifaStatus !== 'aberta' ? (
                 <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 shadow-xl text-center animate-fade-in mt-8">
                   {rifaStatus === 'encerrada' ? (
@@ -315,13 +368,16 @@ export default function App() {
                       <div className="h-px flex-1 bg-gradient-to-r from-zinc-200 to-transparent dark:from-zinc-800" />
                     </div>
                     
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* 🚀 Mudamos para md:grid-cols-3 para caber 6 botões divididos em 2 linhas perfeitas */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {[
-                        { qtd: 1,  titulo: 'Avulso', desc: '1 Número', preco: 'R$ 10,00', economia: null, destaque: false },
-                        { qtd: 6,  titulo: 'Promoção', desc: '6 Números', preco: 'R$ 50,00', economia: 'Economize R$ 10', destaque: false },
-                        { qtd: 13, titulo: 'Vantagem', desc: '13 Números', preco: 'R$ 100,00', economia: 'Economize R$ 30', destaque: false },
-                        { qtd: 26, titulo: '🔥 MAIS VENDIDO', desc: '26 Números', preco: 'R$ 200,00', economia: 'Economize R$ 60', destaque: true },
-                      ].map(({ qtd, titulo, desc, preco, economia, destaque }) => (
+                        { qtd: 1,  titulo: 'Para começar', desc: '1 Número', preco: 'R$ 10,00', precoOriginal: null, destaque: false, badge: null },
+                        { qtd: 3,  titulo: 'Básico', desc: '3 Números', preco: 'R$ 30,00', precoOriginal: null, destaque: false, badge: null },
+                        { qtd: 6,  titulo: '6x Mais Chances', desc: '6 Números', preco: 'R$ 50,00', precoOriginal: 'R$ 60,00', destaque: false, badge: 'Popular' },
+                        { qtd: 7,  titulo: 'Sorte Simples', desc: '7 Números', preco: 'R$ 70,00', precoOriginal: null, destaque: false, badge: null },
+                        { qtd: 13, titulo: '13x Mais Chances', desc: '13 Números', preco: 'R$ 100,00', precoOriginal: 'R$ 130,00', destaque: false, badge: 'Recomendado' },
+                        { qtd: 26, titulo: 'Chances Máximas', desc: '26 Números', preco: 'R$ 200,00', precoOriginal: 'R$ 260,00', destaque: true, badge: '🔥 Mais Vendido' },
+                      ].map(({ qtd, titulo, desc, preco, precoOriginal, destaque, badge }) => (
                         <button
                           key={qtd}
                           onClick={() => gerarSurpresinha(qtd)}
@@ -331,23 +387,39 @@ export default function App() {
                               : 'bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-orange-500/50 hover:shadow-md text-zinc-900 dark:text-white'
                           }`}
                         >
-                          {destaque && (
-                            <div className="absolute -top-3.5 bg-zinc-900 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg border border-zinc-700 whitespace-nowrap">
-                              Melhor Custo-Benefício
+                          {/* Etiqueta Flutuante Principal */}
+                          {badge && (
+                            <div className={`absolute -top-3.5 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg border whitespace-nowrap ${
+                              destaque ? 'bg-zinc-900 text-white border-zinc-700' : 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800'
+                            }`}>
+                              {badge}
                             </div>
                           )}
+
                           <span className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${destaque ? 'text-orange-100' : 'text-zinc-500'}`}>
                             {titulo}
                           </span>
+                          
                           <strong className="text-2xl sm:text-3xl font-black mb-1">{desc}</strong>
-                          <span className={`text-sm font-semibold mb-3 ${destaque ? 'text-orange-50' : 'text-zinc-600 dark:text-zinc-400'}`}>
-                            {preco}
-                          </span>
-                          {economia && (
-                            <div className={`text-[11px] font-bold px-3 py-1.5 rounded-lg w-full ${
-                              destaque ? 'bg-black/20 text-white' : 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                          
+                          {/* Gatilho de Preço Riscado (Ancoragem) */}
+                          <div className="flex flex-col items-center mb-3">
+                            {precoOriginal && (
+                              <span className={`text-xs line-through font-semibold ${destaque ? 'text-orange-200' : 'text-zinc-400'}`}>
+                                De {precoOriginal}
+                              </span>
+                            )}
+                            <span className={`text-lg font-black ${destaque ? 'text-white' : 'text-green-600 dark:text-green-500'}`}>
+                              {precoOriginal ? 'Por ' : ''}{preco}
+                            </span>
+                          </div>
+
+                          {/* Gatilho de Desconto Explícito (SÓ MOSTRA SE TIVER PROMOÇÃO) */}
+                          {precoOriginal && (
+                            <div className={`text-[11px] font-black px-3 py-1.5 rounded-lg w-full uppercase tracking-wider border border-dashed ${
+                              destaque ? 'bg-black/20 text-white border-white/30' : 'bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-500 border-green-300 dark:border-green-800'
                             }`}>
-                              💸 {economia}
+                              Você economiza R$ {Number(precoOriginal.replace(/\D/g, '')) / 100 - Number(preco.replace(/\D/g, '')) / 100}
                             </div>
                           )}
                         </button>
@@ -355,40 +427,50 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* DADOS DA RIFA E PROVA SOCIAL */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm flex items-center justify-around">
-                      <div className="text-center">
-                        <p className="text-3xl font-black text-zinc-900 dark:text-white mb-1">{qtdDisponiveis}</p>
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Disponíveis</p>
+                  {/* 🚀 DADOS DA RIFA E PROVA SOCIAL REDESENHADOS PARA FICAR PROPORCIONAL */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                    
+                    {/* ESQUERDA: Métricas da Rifa Desmembradas */}
+                    <div className="flex flex-col gap-4 h-full">
+                      <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center flex-1 shadow-sm">
+                        <p className="text-5xl font-black text-zinc-900 dark:text-white leading-none">{qtdDisponiveis}</p>
+                        <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mt-2">Disponíveis</p>
                       </div>
-                      <div className="w-px h-12 bg-zinc-200 dark:bg-zinc-800" />
-                      <div className="text-center">
-                        <p className="text-3xl font-black text-yellow-500 mb-1">{qtdReservados}</p>
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Reservados</p>
-                      </div>
-                      <div className="w-px h-12 bg-zinc-200 dark:bg-zinc-800" />
-                      <div className="text-center">
-                        <p className="text-3xl font-black text-green-500 mb-1">{qtdPagos}</p>
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Pagos</p>
+                      
+                      <div className="flex gap-4">
+                        <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 rounded-3xl p-5 flex flex-col items-center justify-center flex-1 shadow-sm">
+                          <p className="text-3xl font-black text-yellow-600 dark:text-yellow-500 leading-none">{qtdReservados}</p>
+                          <p className="text-[10px] font-bold text-yellow-700 dark:text-yellow-600 uppercase tracking-widest mt-2">Reservados</p>
+                        </div>
+                        <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-900/30 rounded-3xl p-5 flex flex-col items-center justify-center flex-1 shadow-sm">
+                          <p className="text-3xl font-black text-green-600 dark:text-green-500 leading-none">{qtdPagos}</p>
+                          <p className="text-[10px] font-bold text-green-700 dark:text-green-600 uppercase tracking-widest mt-2">Pagos</p>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 shadow-sm">
+                    {/* DIREITA: Últimas Participações Otimizadas */}
+                    <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm h-full flex flex-col">
                       <div className="flex items-center gap-2 mb-4">
                         <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                         <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Últimas Participações</h3>
                       </div>
                       {ultimosCompradores.length === 0 ? (
-                        <p className="text-sm text-zinc-400 italic">Seja o primeiro a garantir seus números!</p>
+                        <div className="flex-1 flex items-center justify-center">
+                          <p className="text-sm text-zinc-400 italic">Seja o primeiro a garantir seus números!</p>
+                        </div>
                       ) : (
-                        <div className="space-y-3">
-                          {ultimosCompradores.map((p) => (
-                            <div key={p.id} className="flex items-center gap-3">
-                              <CheckCircle weight="fill" className="text-green-500 text-lg shrink-0" />
-                              <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">
-                                <strong className="text-zinc-900 dark:text-white font-bold">{mascararNome(p.nome)}</strong> garantiu <strong className="text-orange-500">{p.nums.length} número{p.nums.length > 1 ? 's' : ''}</strong>
-                              </p>
+                        <div className="flex-1 flex flex-col justify-between gap-2">
+                          {ultimosCompradores.slice(0, 5).map((p) => (
+                            <div key={p.id} className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-900/50 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+                              <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-full shrink-0">
+                                <CheckCircle weight="fill" className="text-green-600 dark:text-green-500 text-lg" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-zinc-900 dark:text-white truncate">
+                                  <strong className="font-black uppercase">{mascararNome(p.nome)}</strong> garantiu <strong className="text-orange-500">{p.nums.length} cota{p.nums.length > 1 ? 's' : ''}</strong>
+                                </p>
+                              </div>
                             </div>
                           ))}
                         </div>
