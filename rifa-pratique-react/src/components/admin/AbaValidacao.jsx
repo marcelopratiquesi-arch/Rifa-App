@@ -52,7 +52,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // ✅ CORRIGIDO: Corrigir números duplicados com Proteção Cruzada e formato 3 dígitos
+  // ✅ Corrigir números duplicados com Proteção Cruzada e formato 3 dígitos
   const salvarNovosNumeros = async (id) => {
     const pedido = pedidos.find(p => p.id === id);
 
@@ -70,7 +70,6 @@ export default function AbaValidacao({ pedidos, vendedores }) {
       const batch = writeBatch(db);
       const agora = Date.now();
 
-      // 1. Libera as travas antigas com inteligência (protege se outro aluno tiver o mesmo número)
       if (pedido && pedido.nums) {
         pedido.nums.forEach(numAntigo => {
           const outroPedidoUsando = pedidos.find(p =>
@@ -82,20 +81,17 @@ export default function AbaValidacao({ pedidos, vendedores }) {
           const numStr = String(numAntigo).padStart(3, '0');
 
           if (outroPedidoUsando) {
-            // Outro aluno também tem o número! Transfere a trava para ele.
             batch.set(
               doc(db, 'numerosReservados', numStr),
               { status: outroPedidoUsando.status, pedidoId: outroPedidoUsando.id, ts: outroPedidoUsando.ts || agora },
               { merge: true }
             );
           } else {
-            // Ninguém mais tem o número, apaga a trava de vez
             batch.delete(doc(db, 'numerosReservados', numStr));
           }
         });
       }
 
-      // 2. Cria as novas travas com timestamp renovado (formato 3 dígitos)
       novosNums.forEach(num => {
         batch.set(
           doc(db, 'numerosReservados', String(num).padStart(3, '0')),
@@ -104,7 +100,6 @@ export default function AbaValidacao({ pedidos, vendedores }) {
         );
       });
 
-      // 3. Atualiza o pedido e renova o timestamp (zera o timer de expiração)
       batch.update(doc(db, 'pedidos', id), { nums: novosNums, ts: agora });
 
       await batch.commit();
@@ -115,7 +110,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // ✅ CORRIGIDO: Aprovar pedido (formato 3 dígitos)
+  // ✅ Aprovar pedido (formato 3 dígitos)
   const aprovarPedidoUnico = async (id) => {
     try {
       const pedido = pedidos.find(p => p.id === id);
@@ -140,7 +135,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // ✅ CORRIGIDO: Expirar pedido (formato 3 dígitos)
+  // ✅ Expirar pedido (formato 3 dígitos)
   const expirarPedido = async (id) => {
     if (!window.confirm('Tem certeza que deseja expirar e liberar os números?')) return;
     try {
@@ -162,7 +157,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     }
   };
 
-  // ✅ CORRIGIDO: Aprovação em massa (formato 3 dígitos)
+  // ✅ Aprovação em massa (formato 3 dígitos)
   const aprovarSelecionadosMassa = async () => {
     if (selecionados.size === 0) return;
     if (!window.confirm(`Confirma a aprovação de ${selecionados.size} pedidos de uma só vez?`)) return;
@@ -202,17 +197,43 @@ export default function AbaValidacao({ pedidos, vendedores }) {
     });
   };
 
+  // ─── 🚀 TEMPLATES DE WHATSAPP ─────────────────────────────────
+
   const cobrarWhatsApp = (p) => {
     const tel  = p.tel.replace(/\D/g, '');
     const nome = p.nome.split(' ')[0];
     const msgs =
-      "Ola " + nome + "!\n" +
-      "Aqui e o Marcelo da Rifa Pratique.\n\n" +
-      "Vi que voce separou os numeros *" + (p.nums || []).join(', ') + "* " +
+      "Olá " + nome + "!\n" +
+      "Aqui é o Marcelo da Rifa Pratique.\n\n" +
+      "Vi que você separou os números *" + (p.nums || []).join(', ') + "* " +
       "(Pedido #" + p.id.slice(-6) + " - R$ " + fmtValor(p.valor) + ").\n\n" +
-      "So falta o PIX para confirmar sua chance de ganhar!\n" +
+      "Só falta o PIX para confirmar sua chance de ganhar!\n" +
       "Chave PIX: *lemosmjlp@gmail.com*\n\n" +
       "Posso te ajudar?";
+    window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msgs)}`, '_blank');
+  };
+
+  const notificarAprovadoWhatsApp = (p) => {
+    const tel  = p.tel.replace(/\D/g, '');
+    const nome = p.nome.split(' ')[0];
+    const msgs =
+      "Olá " + nome + "!\n" +
+      "Aqui é o Marcelo da Rifa Pratique.\n\n" +
+      "✅ *PAGAMENTO APROVADO!*\n" +
+      "Recebemos o seu PIX de R$ " + fmtValor(p.valor) + " com sucesso.\n\n" +
+      "Suas rifas estão confirmadíssimas: *" + (p.nums || []).join(', ') + "*\n\n" +
+      "Muito obrigado por participar e boa sorte no sorteio oficial!";
+    window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msgs)}`, '_blank');
+  };
+
+  const recuperarExpiradoWhatsApp = (p) => {
+    const tel  = p.tel.replace(/\D/g, '');
+    const nome = p.nome.split(' ')[0];
+    const msgs =
+      "Olá " + nome + "!\n" +
+      "Aqui é o Marcelo da Rifa Pratique.\n\n" +
+      "Vi que a sua reserva para os números acabou passando do prazo e foi cancelada pelo sistema. 😔\n\n" +
+      "Ainda temos algumas rifas disponíveis! Quer ajuda para escolher novos números e garantir sua participação?";
     window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msgs)}`, '_blank');
   };
 
@@ -266,7 +287,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
   return (
     <div className="animate-fade-in pb-24">
 
-      {/* ALERTA DE CONFLITO — só aparece se houver números duplicados */}
+      {/* ALERTA DE CONFLITO */}
       {conflitosAtivos.length > 0 && (
         <div className="bg-red-600 text-white p-4 rounded-xl shadow-lg mb-6 flex flex-col gap-2 border-2 border-red-800 animate-pulse-slow">
           <h3 className="font-black flex items-center gap-2 text-lg">
@@ -386,7 +407,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                   : 'border-zinc-200 dark:border-zinc-800 hover:border-orange-300 dark:hover:border-orange-900/50'
               }`}>
 
-                {/* Checkbox de seleção em massa */}
+                {/* Checkbox de seleção em massa (Apenas para pendentes) */}
                 {p.status === 'pendente' && (
                   <button onClick={() => toggleSelecao(p.id)}
                     className="absolute top-3 right-3 z-10 p-1 bg-white/80 dark:bg-zinc-900/80 backdrop-blur rounded text-zinc-400 hover:text-orange-500 transition-colors"
@@ -501,27 +522,47 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                     </p>
                   )}
 
-                  {/* Ações */}
-                  {p.status === 'pendente' && (
-                    <div className="grid grid-cols-12 gap-2 mt-auto">
-                      <button onClick={() => cobrarWhatsApp(p)}
-                        className="col-span-5 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold py-2 rounded-lg transition-colors shadow-sm uppercase"
+                  {/* 🚀 AÇÕES COM MENSAGENS DO WHATSAPP DE ACORDO COM O STATUS */}
+                  <div className="grid grid-cols-1 gap-2 mt-auto pt-2">
+                    
+                    {p.status === 'pendente' && (
+                      <div className="grid grid-cols-12 gap-2">
+                        <button onClick={() => cobrarWhatsApp(p)}
+                          className="col-span-5 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold py-2 rounded-lg transition-colors shadow-sm uppercase"
+                        >
+                          <WhatsappLogo size={16} weight="fill" /> Cobrar
+                        </button>
+                        <button onClick={() => aprovarPedidoUnico(p.id)}
+                          className="col-span-5 flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg transition-colors shadow-sm uppercase"
+                        >
+                          <CheckCircle size={16} weight="fill" /> Aprovar
+                        </button>
+                        <button onClick={() => expirarPedido(p.id)}
+                          className="col-span-2 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-zinc-400 hover:text-red-500 text-xs font-bold py-2 rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700"
+                          title="Expirar Pedido"
+                        >
+                          <XCircle size={18} weight="fill" />
+                        </button>
+                      </div>
+                    )}
+
+                    {p.status === 'pago' && (
+                      <button onClick={() => notificarAprovadoWhatsApp(p)}
+                        className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm uppercase"
                       >
-                        <WhatsappLogo size={16} weight="fill" /> Cobrar
+                        <WhatsappLogo size={18} weight="fill" /> Enviar Recibo de Compra
                       </button>
-                      <button onClick={() => aprovarPedidoUnico(p.id)}
-                        className="col-span-5 flex items-center justify-center gap-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-2 rounded-lg transition-colors shadow-sm uppercase"
+                    )}
+
+                    {p.status === 'expirado' && (
+                      <button onClick={() => recuperarExpiradoWhatsApp(p)}
+                        className="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm uppercase"
                       >
-                        <CheckCircle size={16} weight="fill" /> Aprovar
+                        <WhatsappLogo size={18} weight="fill" /> Tentar Recuperar Venda
                       </button>
-                      <button onClick={() => expirarPedido(p.id)}
-                        className="col-span-2 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-zinc-400 hover:text-red-500 text-xs font-bold py-2 rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700"
-                        title="Expirar Pedido"
-                      >
-                        <XCircle size={18} weight="fill" />
-                      </button>
-                    </div>
-                  )}
+                    )}
+
+                  </div>
                 </div>
               </div>
             );

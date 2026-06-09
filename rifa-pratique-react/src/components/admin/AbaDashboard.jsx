@@ -2,14 +2,14 @@ import { useState, useMemo } from 'react';
 import { 
   CurrencyCircleDollar, Ticket, Medal, Target, 
   Storefront, DownloadSimple, FilePdf, Trophy,
-  WhatsappLogo, FunnelSimple, CaretUp, CaretDown, Fire, X
+  WhatsappLogo, FunnelSimple, CaretUp, CaretDown, Fire, X, Copy
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable'; 
 
 // Configurações e Funções Auxiliares Isoladas
-const TOTAL_COTAS = 1000;
+const TOTAL_RIFAS = 1000;
 const META_POR_VENDEDOR = 20; 
 const fmtValor = (v) => Number(v).toFixed(2).replace('.', ',');
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
@@ -21,12 +21,13 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   
   // ─── ESTADOS DE FILTRO E ORDENAÇÃO ────────────────────────────
   const [filtroUnidade, setFiltroUnidade] = useState('Todas');
-  const [ordenacao, setOrdenacao]         = useState('cotas'); 
+  const [ordenacao, setOrdenacao]         = useState('rifas'); // 🚀 Alterado de 'cotas' para 'rifas'
   const [ordemDirecao, setOrdemDirecao]   = useState('desc');  
 
   // 🚀 ESTADOS DO PREVIEW DO WHATSAPP
   const [modalWhatsAppOpen, setModalWhatsAppOpen] = useState(false);
   const [mensagemZap, setMensagemZap]             = useState('');
+  const [textoCopiado, setTextoCopiado]           = useState(false); 
 
   // ─── 1. PERFORMANCE: USEMEMO (Evita travamentos na interface) ──
   const dadosMemoizados = useMemo(() => {
@@ -36,16 +37,16 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     const totalFaturado    = pedidosAprovados.reduce((s, p) => s + Number(p.valor), 0);
     const totalPendente    = pedidosPendentes.reduce((s, p) => s + Number(p.valor), 0);
 
-    const totalCotasVendidas   = pedidosAprovados.reduce((s, p) => s + (p.nums || []).length, 0);
-    const totalCotasReservadas = pedidosPendentes.reduce((s, p) => s + (p.nums || []).length, 0);
+    const totalRifasVendidas   = pedidosAprovados.reduce((s, p) => s + (p.nums || []).length, 0);
+    const totalRifasReservadas = pedidosPendentes.reduce((s, p) => s + (p.nums || []).length, 0);
     
-    const pctVendidas          = Math.min((totalCotasVendidas / TOTAL_COTAS) * 100, 100).toFixed(1);
-    const pctReservadas        = Math.min((totalCotasReservadas / TOTAL_COTAS) * 100, 100).toFixed(1);
-    const pctTotal             = Math.min(((totalCotasVendidas + totalCotasReservadas) / TOTAL_COTAS) * 100, 100).toFixed(1);
+    const pctVendidas          = Math.min((totalRifasVendidas / TOTAL_RIFAS) * 100, 100).toFixed(1);
+    const pctReservadas        = Math.min((totalRifasReservadas / TOTAL_RIFAS) * 100, 100).toFixed(1);
+    const pctTotal             = Math.min(((totalRifasVendidas + totalRifasReservadas) / TOTAL_RIFAS) * 100, 100).toFixed(1);
 
     const ticketMedio = pedidosAprovados.length > 0 ? (totalFaturado / pedidosAprovados.length) : 0;
-    const mediaCotas = pedidosAprovados.length > 0 ? (totalCotasVendidas / pedidosAprovados.length) : 0;
-    const projecaoFaturamento = totalCotasVendidas > 0 ? (totalFaturado / totalCotasVendidas) * TOTAL_COTAS : 0;
+    const mediaRifas = pedidosAprovados.length > 0 ? (totalRifasVendidas / pedidosAprovados.length) : 0;
+    const projecaoFaturamento = totalRifasVendidas > 0 ? (totalFaturado / totalRifasVendidas) * TOTAL_RIFAS : 0;
 
     // Descobre o pacote mais vendido
     const contagem = {};
@@ -56,25 +57,24 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     const ordenado = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
     const topPacote = ordenado.length > 0 ? { qtd: ordenado[0][0], vezes: ordenado[0][1] } : null;
 
-    // ─── 3. CORREÇÃO DE CASING (Unidades padronizadas blindadas) ────────
+    // ─── CORREÇÃO DE CASING (Unidades padronizadas blindadas) ────────
     const mapaVendedores = {};
     vendedores.forEach((v) => {
       const chaveNome = normalizarTexto(v.nome);
       let chaveUnidade = normalizarTexto(v.unidade || 'SANTA INÊS 1');
-      // Correção rápida se alguém digitou sem acento
       if (chaveUnidade === 'SANTA INES 1') chaveUnidade = 'SANTA INÊS 1';
       if (chaveUnidade === 'SANTA INES 2') chaveUnidade = 'SANTA INÊS 2';
       mapaVendedores[chaveNome] = chaveUnidade;
     });
 
     const rv = {};
-    const ru = { 'SANTA INÊS 1': { valor: 0, cotas: 0 }, 'SANTA INÊS 2': { valor: 0, cotas: 0 }, 'VENDA DIRETA': { valor: 0, cotas: 0 } };
+    const ru = { 'SANTA INÊS 1': { valor: 0, rifas: 0 }, 'SANTA INÊS 2': { valor: 0, rifas: 0 }, 'VENDA DIRETA': { valor: 0, rifas: 0 } };
     
     // Injeta ativos primeiro para eles sempre aparecerem, mesmo zerados
     vendedores.forEach(v => {
       if (v.ativo !== false) {
         const chaveNome = normalizarTexto(v.nome);
-        rv[chaveNome] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[chaveNome] };
+        rv[chaveNome] = { valor: 0, rifas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[chaveNome] };
       }
     });
 
@@ -83,15 +83,15 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       const chaveFinal = vendChave && mapaVendedores[vendChave] ? vendChave : (vendChave === '' ? 'VENDA DIRETA' : vendChave);
       const und = mapaVendedores[chaveFinal] || 'VENDA DIRETA';
       
-      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
+      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, rifas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
       
       rv[chaveFinal].valor += Number(p.valor);
-      rv[chaveFinal].cotas += (p.nums || []).length;
+      rv[chaveFinal].rifas += (p.nums || []).length;
       rv[chaveFinal].pedidosPagos += 1;
       
-      if (!ru[und]) ru[und] = { valor: 0, cotas: 0 };
+      if (!ru[und]) ru[und] = { valor: 0, rifas: 0 };
       ru[und].valor += Number(p.valor);
-      ru[und].cotas += (p.nums || []).length;
+      ru[und].rifas += (p.nums || []).length;
     });
 
     pedidos.forEach(p => {
@@ -99,7 +99,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       const chaveFinal = vendChave && mapaVendedores[vendChave] ? vendChave : (vendChave === '' ? 'VENDA DIRETA' : vendChave);
       const und = mapaVendedores[chaveFinal] || 'VENDA DIRETA';
 
-      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, cotas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
+      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, rifas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
       rv[chaveFinal].pedidosCriados += 1;
     });
 
@@ -115,22 +115,20 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       .sort((a, b) => b.valor - a.valor);
 
     return {
-      totalFaturado, totalPendente, ticketMedio, mediaCotas, projecaoFaturamento,
+      totalFaturado, totalPendente, ticketMedio, mediaRifas, projecaoFaturamento,
       topPacote, rankVend, rankUnit
     };
   }, [pedidos, vendedores]); 
 
   const {
-    totalFaturado, totalPendente, ticketMedio, mediaCotas, projecaoFaturamento,
+    totalFaturado, totalPendente, ticketMedio, mediaRifas, projecaoFaturamento,
     topPacote, rankVend, rankUnit
   } = dadosMemoizados;
 
-  // Aplica o filtro de unidade na tabela de vendedores de forma blindada
   const vendedoresFiltrados = filtroUnidade === 'Todas' 
     ? rankVend 
     : rankVend.filter(v => v.unidade === normalizarTexto(filtroUnidade));
 
-  // ─── LÓGICA DE ORDENAÇÃO VISUAL DA TABELA ────────
   const handleSort = (coluna) => {
     if (ordenacao === coluna) {
       setOrdemDirecao(ordemDirecao === 'asc' ? 'desc' : 'asc');
@@ -155,43 +153,40 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   });
 
-  // EXTRAINDO OS 3 MELHORES VENDEDORES PARA O PÓDIO
   const top3Vendedores = useMemo(() => {
     return [...vendedoresFiltrados]
-      .filter(v => v.nome !== 'VENDA DIRETA' && v.cotas > 0)
-      .sort((a, b) => b.cotas - a.cotas || b.valor - a.valor)
+      .filter(v => v.nome !== 'VENDA DIRETA' && v.rifas > 0)
+      .sort((a, b) => b.rifas - a.rifas || b.valor - a.valor)
       .slice(0, 3);
   }, [vendedoresFiltrados]);
 
-  // CÁLCULO DA "AMEAÇA" ENTRE AS UNIDADES
   let msgBatalhaUnidades = null;
   if (rankUnit.length >= 2 && rankUnit[0].valor > 0) {
     const diferencaValor = rankUnit[0].valor - rankUnit[1].valor;
     if (diferencaValor > 0) {
-      const cotasAprox = Math.ceil(diferencaValor / 10);
-      msgBatalhaUnidades = `🔥 Faltam apenas R$ ${fmtValor(diferencaValor)} (${cotasAprox} cotas) para a unidade ${rankUnit[1].nome} virar o jogo!`;
+      const rifasAprox = Math.ceil(diferencaValor / 10);
+      msgBatalhaUnidades = `🔥 Faltam apenas R$ ${fmtValor(diferencaValor)} (${rifasAprox} rifas) para a unidade ${rankUnit[1].nome} virar o jogo!`;
     } else {
       msgBatalhaUnidades = `🔥 EMPATE TÉCNICO! Quem vai desempatar essa guerra?`;
     }
   }
 
-  // ─── LÓGICA DO PREVIEW DO WHATSAPP ──────────────────────
   const prepararRankingWhatsApp = () => {
     const rankingInquebravel = [...vendedoresFiltrados]
       .filter(v => v.nome !== 'VENDA DIRETA')
-      .sort((a, b) => b.cotas - a.cotas || b.valor - a.valor);
+      .sort((a, b) => b.rifas - a.rifas || b.valor - a.valor);
 
-    const pontuaram          = rankingInquebravel.filter(v => v.cotas > 0);
-    const zerados            = rankingInquebravel.filter(v => v.cotas === 0);
+    const pontuaram          = rankingInquebravel.filter(v => v.rifas > 0);
+    const zerados            = rankingInquebravel.filter(v => v.rifas === 0);
     const metaGlobal         = rankingInquebravel.length * META_POR_VENDEDOR;
-    const totalVendidoEquipe = rankingInquebravel.reduce((acc, v) => acc + v.cotas, 0);
+    const totalVendidoEquipe = rankingInquebravel.reduce((acc, v) => acc + v.rifas, 0);
 
     const tituloRanking = filtroUnidade === 'Todas' ? 'GERAL' : normalizarTexto(filtroUnidade);
 
     const linhas = [];
 
     linhas.push(`*RANKING DE VENDAS - ${tituloRanking}*`);
-    linhas.push(`*Total da Equipe:* ${totalVendidoEquipe} / ${metaGlobal} cotas`);
+    linhas.push(`*Total da Equipe:* ${totalVendidoEquipe} / ${metaGlobal} rifas`);
     linhas.push('');
 
     let pos = 1;
@@ -200,8 +195,8 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       linhas.push('*VENDAS REALIZADAS:*');
       pontuaram.forEach((v) => {
         const nome  = v.nome.split(' ')[0];
-        const cotas = String(v.cotas).padStart(2, '0');
-        linhas.push(`${pos}º ${nome} - ${cotas} cotas`);
+        const rifas = String(v.rifas).padStart(2, '0');
+        linhas.push(`${pos}º ${nome} - ${rifas} rifas`);
         pos++;
       });
     }
@@ -211,12 +206,11 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       linhas.push('*AINDA NÃO PONTUARAM:*');
       zerados.forEach((v) => {
         const nome = v.nome.split(' ')[0];
-        linhas.push(`${pos}º ${nome} - 0 cotas`);
+        linhas.push(`${pos}º ${nome} - 0 rifas`);
         pos++;
       });
     }
 
-    // Carrega o texto pro estado e abre o Modal
     setMensagemZap(linhas.join('\n'));
     setModalWhatsAppOpen(true);
   };
@@ -224,6 +218,16 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   const confirmarEnvioWhatsApp = () => {
     window.open('https://wa.me/?text=' + encodeURIComponent(mensagemZap), '_blank');
     setModalWhatsAppOpen(false);
+  };
+
+  const copiarTextoWhatsApp = async () => {
+    try {
+      await navigator.clipboard.writeText(mensagemZap);
+      setTextoCopiado(true);
+      setTimeout(() => setTextoCopiado(false), 2000); 
+    } catch (err) {
+      console.error("Falha ao copiar texto: ", err);
+    }
   };
 
   const pegarUnidadeDoVendedor = (nomeVendedor) => {
@@ -252,31 +256,93 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Vendas');
-    XLSX.writeFile(wb, `Rifa_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Vendas Gerais');
+    XLSX.writeFile(wb, `Rifa_Geral_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  const exportarExcelNumerosPagos = () => {
+    const pagos = pedidos.filter(p => p.status === 'pago');
+    const linhas = [];
+
+    pagos.forEach(p => {
+      const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
+      const unidade = pegarUnidadeDoVendedor(vendFinal);
+      
+      if (p.nums && Array.isArray(p.nums)) {
+        p.nums.forEach(num => {
+          linhas.push({
+            'Número': String(num).padStart(3, '0'),
+            'Nome Cliente': normalizarTexto(p.nome),
+            'CPF': p.cpf || '-',
+            'Vendedor': vendFinal,
+            'Unidade': unidade,
+            'Status': 'PAGO',
+            'ID Pedido': p.id
+          });
+        });
+      }
+    });
+
+    linhas.sort((a, b) => parseInt(a['Número'], 10) - parseInt(b['Número'], 10));
+
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Numeros Pagos');
+    XLSX.writeFile(wb, `Auditoria_Numeros_Pagos_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   const exportarPDF = () => {
-    const pdf = new jsPDF('landscape');
-    pdf.text('RELATÓRIO — RIFA PRATIQUE', 14, 15);
-    pdf.autoTable({
-      head: [['ID','DATA','NOME','VENDEDOR','UNIDADE','STATUS','QTD','VALOR']],
-      body: pedidos.map((p) => {
+    try {
+      const pdf = new jsPDF('landscape');
+      pdf.text('RELATÓRIO DE NÚMEROS — RIFA PRATIQUE', 14, 15);
+      
+      const linhasParaPDF = [];
+
+      pedidos.forEach(p => {
         const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
-        return [
-          p.id, 
-          fmtData(p.ts), 
-          normalizarTexto(p.nome), 
-          vendFinal,
-          pegarUnidadeDoVendedor(vendFinal), 
-          normalizarTexto(p.status),
-          (p.nums || []).length, 
-          `R$ ${fmtValor(p.valor)}`
-        ];
-      }),
-      startY: 22, styles: { fontSize: 8 }, headStyles: { fillColor: [234, 88, 12] },
-    });
-    pdf.save(`Rifa_${new Date().toISOString().slice(0,10)}.pdf`);
+        const unidade = pegarUnidadeDoVendedor(vendFinal);
+        
+        if (p.nums && Array.isArray(p.nums)) {
+          p.nums.forEach(num => {
+            linhasParaPDF.push({
+              numeroInt: parseInt(num, 10), 
+              numeroStr: String(num).padStart(3, '0'),
+              nome: normalizarTexto(p.nome) || 'SEM NOME',
+              cpf: p.cpf || '-',
+              vendedor: vendFinal,
+              unidade: unidade,
+              status: normalizarTexto(p.status) || 'PENDENTE',
+              idPedido: p.id || '-'
+            });
+          });
+        }
+      });
+
+      linhasParaPDF.sort((a, b) => a.numeroInt - b.numeroInt);
+
+      const body = linhasParaPDF.map(linha => [
+        linha.numeroStr,
+        linha.nome,
+        linha.cpf,
+        linha.vendedor,
+        linha.unidade,
+        linha.status,
+        linha.idPedido
+      ]);
+
+      autoTable(pdf, {
+        head: [['NÚMERO', 'NOME', 'CPF', 'VENDEDOR', 'UNIDADE', 'STATUS', 'ID PEDIDO']],
+        body: body,
+        startY: 22, 
+        styles: { fontSize: 8 }, 
+        headStyles: { fillColor: [234, 88, 12] },
+      });
+      
+      pdf.save(`Auditoria_Completa_Rifa_${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (erro) {
+      console.error("Erro ao gerar PDF:", erro);
+      alert("Houve um erro ao gerar o PDF. Verifique o console de desenvolvedor.");
+    }
   };
 
   return (
@@ -297,7 +363,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
             <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Média Rifas</p>
             <Ticket size={20} className="text-orange-500" />
           </div>
-          <h3 className="text-2xl font-black text-zinc-900 dark:text-white">{mediaCotas.toFixed(1)} <span className="text-sm text-zinc-500 font-normal uppercase">/ venda</span></h3>
+          <h3 className="text-2xl font-black text-zinc-900 dark:text-white">{mediaRifas.toFixed(1)} <span className="text-sm text-zinc-500 font-normal uppercase">/ venda</span></h3>
         </div>
 
         <div className="bg-white dark:bg-zinc-900 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between">
@@ -346,7 +412,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                   <Storefront size={28} className="mx-auto mb-2 text-zinc-400" />
                   <h4 className="font-black text-zinc-900 dark:text-white text-sm uppercase">{unidade}</h4>
                   <p className="text-xl font-black text-green-600 dark:text-green-400 mt-1">R$ {fmtValor(dados?.valor || 0)}</p>
-                  <p className="text-xs text-zinc-500 mt-1 uppercase font-bold">{dados?.cotas || 0} RIFAS</p>
+                  <p className="text-xs text-zinc-500 mt-1 uppercase font-bold">{dados?.rifas || 0} RIFAS</p>
                 </div>
               );
             })}
@@ -373,16 +439,21 @@ export default function AbaDashboard({ pedidos, vendedores }) {
             </div>
           </div>
           
-          <div className="flex flex-col xl:flex-row gap-3">
-            <button onClick={exportarExcel} className="flex-1 bg-[#107C41] hover:bg-[#0d6535] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm uppercase tracking-wide">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-auto">
+            <button onClick={exportarExcel} className="w-full bg-[#107C41] hover:bg-[#0d6535] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm uppercase tracking-wide">
               <DownloadSimple size={20} weight="bold" /> PLANILHA
             </button>
-            <button onClick={exportarPDF} className="flex-1 bg-[#E53E3E] hover:bg-[#c53030] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm uppercase tracking-wide">
-              <FilePdf size={20} weight="bold" /> RELATÓRIO PDF
+            
+            <button onClick={exportarExcelNumerosPagos} className="w-full bg-[#0284c7] hover:bg-[#0369a1] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm uppercase tracking-wide shadow-md">
+              <Ticket size={20} weight="bold" /> AUDITORIA
             </button>
-            {/* 🚀 BOTÃO ALTERADO PARA CHAMAR O PREVIEW */}
-            <button onClick={prepararRankingWhatsApp} className="flex-1 bg-[#25D366] hover:bg-[#1ebe57] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm shadow-md uppercase tracking-wide">
-              <WhatsappLogo size={20} weight="fill" /> ENVIAR GRUPO
+            
+            <button onClick={exportarPDF} className="w-full bg-[#E53E3E] hover:bg-[#c53030] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm uppercase tracking-wide">
+              <FilePdf size={20} weight="bold" /> PDF
+            </button>
+            
+            <button onClick={prepararRankingWhatsApp} className="w-full bg-[#25D366] hover:bg-[#1ebe57] text-white font-black py-4 rounded-lg flex justify-center items-center gap-2 transition-colors text-sm shadow-md uppercase tracking-wide">
+              <WhatsappLogo size={20} weight="fill" /> GRUPO
             </button>
           </div>
         </div>
@@ -413,30 +484,27 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
         {top3Vendedores.length > 0 && (
           <div className="mb-10 mt-4 flex flex-row justify-center items-end gap-2 sm:gap-4 px-2">
-            {/* 2º LUGAR */}
             {top3Vendedores[1] && (
               <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-zinc-400 h-[120px] sm:h-[140px] shadow-sm">
                 <span className="text-2xl sm:text-3xl mb-1 drop-shadow-md">🥈</span>
                 <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[1].nome.split(' ')[0]}</span>
-                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[1].cotas} COTAS</span>
+                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[1].rifas} RIFAS</span>
               </div>
             )}
             
-            {/* 1º LUGAR */}
             {top3Vendedores[0] && (
               <div className="flex-1 max-w-[170px] bg-gradient-to-t from-orange-50 to-white dark:from-orange-900/20 dark:to-zinc-900 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-yellow-500 h-[150px] sm:h-[180px] shadow-xl z-10 transform -translate-y-2">
                 <span className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">🥇</span>
                 <span className="font-black text-orange-600 dark:text-orange-500 text-sm sm:text-base text-center truncate w-full uppercase">{top3Vendedores[0].nome.split(' ')[0]}</span>
-                <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black">{top3Vendedores[0].cotas} COTAS</span>
+                <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black">{top3Vendedores[0].rifas} RIFAS</span>
               </div>
             )}
             
-            {/* 3º LUGAR */}
             {top3Vendedores[2] && (
               <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-orange-700 h-[100px] sm:h-[120px] shadow-sm">
                 <span className="text-xl sm:text-2xl mb-1 drop-shadow-md">🥉</span>
                 <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[2].nome.split(' ')[0]}</span>
-                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[2].cotas} COTAS</span>
+                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[2].rifas} RIFAS</span>
               </div>
             )}
           </div>
@@ -464,9 +532,9 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                 
                 <th 
                   className="p-4 font-black uppercase text-xs tracking-wider text-center cursor-pointer hover:text-zinc-900 dark:hover:text-white transition-colors"
-                  onClick={() => handleSort('cotas')}
+                  onClick={() => handleSort('rifas')}
                 >
-                  <div className="flex items-center justify-center gap-1">QTD RIFAS {ordenacao === 'cotas' && (ordemDirecao === 'asc' ? <CaretUp weight="bold"/> : <CaretDown weight="bold"/>)}</div>
+                  <div className="flex items-center justify-center gap-1">QTD RIFAS {ordenacao === 'rifas' && (ordemDirecao === 'asc' ? <CaretUp weight="bold"/> : <CaretDown weight="bold"/>)}</div>
                 </th>
                 
                 <th 
@@ -498,7 +566,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                     <td className="p-4 font-black text-zinc-900 dark:text-white uppercase tracking-wide text-[15px]">{v.nome}</td>
                     <td className="p-4 text-xs font-black text-zinc-400 uppercase tracking-widest">{v.unidade}</td>
                     <td className="p-4 text-center text-zinc-800 dark:text-zinc-200 font-mono text-xl font-black bg-zinc-50 dark:bg-zinc-900/50 group-hover:bg-transparent transition-colors">
-                      {v.cotas}
+                      {v.rifas}
                     </td>
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-3">
@@ -530,7 +598,6 @@ export default function AbaDashboard({ pedidos, vendedores }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col transform transition-all">
             
-            {/* Header do Modal estilo WhatsApp */}
             <div className="bg-[#25D366] p-4 flex justify-between items-center text-white">
               <h3 className="font-black flex items-center gap-2">
                 <WhatsappLogo size={24} weight="fill" /> Preview da Mensagem
@@ -554,13 +621,22 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                 onChange={(e) => setMensagemZap(e.target.value)}
               />
               
-              <div className="flex gap-3 mt-2">
+              <div className="flex flex-col sm:flex-row gap-3 mt-2">
                 <button 
                   onClick={() => setModalWhatsAppOpen(false)} 
                   className="flex-1 py-3.5 font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-colors"
                 >
                   Cancelar
                 </button>
+                
+                <button 
+                  onClick={copiarTextoWhatsApp} 
+                  className="flex-1 py-3.5 font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 border border-blue-200 dark:border-blue-800/30 rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <Copy size={20} weight="bold" />
+                  {textoCopiado ? 'Copiado!' : 'Copiar'}
+                </button>
+
                 <button 
                   onClick={confirmarEnvioWhatsApp} 
                   className="flex-[2] py-3.5 font-black text-white bg-[#25D366] hover:bg-[#1ebe57] rounded-xl transition-colors shadow-lg shadow-[#25D366]/30 flex items-center justify-center gap-2"

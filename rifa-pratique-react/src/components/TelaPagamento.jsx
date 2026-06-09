@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Copy, CheckCircle, WhatsappLogo, UserList, Timer, WarningCircle, Storefront, Info, CalendarPlus } from '@phosphor-icons/react';
 import { doc, updateDoc, collection, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import Confetti from 'react-confetti'; // 🚀 IMPORTAÇÃO DOS CONFETES
 
 export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSucesso }) {
   const [etapa, setEtapa]               = useState('formulario');
@@ -15,12 +16,27 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
   // Gatilho para fazer o botão do WhatsApp piscar
   const [pixCopiado, setPixCopiado]     = useState(false);
 
+  // 🚀 ESTADO PARA O TAMANHO DA TELA (CONFETES)
+  const [windowSize, setWindowSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
   const [dados, setDados] = useState({
     nome: '', cpf: '', telefone: '', email: '', endereco: '', vendedor: ''
   });
 
   const CHAVE_PIX             = "lemosmjlp@gmail.com";
   const NUMERO_WHATSAPP_ADMIN = "5531973483934";
+
+  // ─── MONITORAR TAMANHO DA TELA PARA OS CONFETES ───────────
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // ─── VENDEDORES ATIVOS ──────────────────────────
   useEffect(() => {
@@ -118,7 +134,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
 
         refs.forEach((ref, i) => {
           tx.set(ref, {
-            numero:   numeros[i],
+            numero:   String(numeros[i]).padStart(3, '0'),
             status:   'reservado',
             pedidoId: novoPedidoId,
             ts:       agora
@@ -147,42 +163,46 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     alert("✅ Chave Copiada!\n\n⚠️ IMPORTANTE: Vá ao seu banco, pague e VOLTE NESTA TELA para clicar no botão verde de enviar comprovante. Sem isso, sua reserva é cancelada!");
   };
 
-  // 🚀 MENSAGEM LIMPA (SEM EMOJIS)
+  const getWhatsAppUrl = () => {
+    const valor = Number(valorCobrado).toFixed(2).replace('.', ',');
+    const msg = 
+      `Olá Marcelo!\n` +
+      `Sou *${dados.nome}* e acabei de fazer minha reserva na Rifa Pratique.\n\n` +
+      `*DADOS DA RESERVA*\n` +
+      `- *Pedido:* #${pedidoIdGerado}\n` +
+      `- *Nome:* ${dados.nome}\n` +
+      `- *CPF:* ${dados.cpf}\n` +
+      `- *Indicado por:* ${dados.vendedor}\n` +
+      `- *Números:* ${numeros.join(", ")}\n` +
+      `- *Valor:* R$ ${valor}\n\n` +
+      `*SOBRE O SORTEIO:*\n` +
+      `- *Data:* 22/07 às 20h\n` +
+      `- *Local:* Pratique Fitness Santa Inês II\n` +
+      `- *Endereço:* Av. José Cândido da Silveira, 2790\n\n` +
+      `Segue em anexo o meu comprovante PIX!`;
+
+    return `https://wa.me/${NUMERO_WHATSAPP_ADMIN}?text=${encodeURIComponent(msg)}`;
+  };
+
   const handleEnviarWhatsApp = async () => {
     setACarregar(true);
     try {
+      const url = getWhatsAppUrl();
+      window.open(url, '_blank');
       await updateDoc(doc(db, 'pedidos', pedidoIdGerado), { temComprovante: true });
-      const valor = Number(valorCobrado).toFixed(2).replace('.', ',');
-      
-      const msg = 
-        `Olá Marcelo!\n` +
-        `Sou *${dados.nome}* e acabei de fazer minha reserva na Rifa Pratique.\n\n` +
-        `*DADOS DA RESERVA*\n` +
-        `- *Pedido:* #${pedidoIdGerado}\n` +
-        `- *Nome:* ${dados.nome}\n` +
-        `- *CPF:* ${dados.cpf}\n` +
-        `- *Indicado por:* ${dados.vendedor}\n` +
-        `- *Números:* ${numeros.join(", ")}\n` +
-        `- *Valor:* R$ ${valor}\n\n` +
-        `*SOBRE O SORTEIO:*\n` +
-        `- *Data:* 22/07 às 20h\n` +
-        `- *Local:* Pratique Fitness Santa Inês II\n` +
-        `- *Endereço:* Av. José Cândido da Silveira, 2790\n\n` +
-        `Segue em anexo o meu comprovante PIX!`;
-
-      window.open(`https://wa.me/${NUMERO_WHATSAPP_ADMIN}?text=${encodeURIComponent(msg)}`, '_blank');
       setEtapa('sucesso');
+    } catch (err) {
+      console.error(err);
+      setEtapa('sucesso'); 
     } finally {
       setACarregar(false);
     }
   };
 
-  // 🚀 FUNÇÃO PARA ADICIONAR AO GOOGLE CALENDAR
   const handleSalvarAgenda = () => {
     const titulo = encodeURIComponent('Sorteio Oficial - Rifa Pratique');
     const detalhes = encodeURIComponent('Chegou o grande dia do sorteio oficial da Rifa Pratique! Boa sorte!');
     const local = encodeURIComponent('Pratique Fitness Santa Inês II - Av. José Cândido da Silveira, 2790');
-    // Data: 22 de Julho de 2026 às 20h00 BRT (UTC-3) -> 23h00 UTC
     const datas = '20260722T230000Z/20260723T000000Z'; 
     const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${titulo}&dates=${datas}&details=${detalhes}&location=${local}`;
     window.open(url, '_blank');
@@ -321,21 +341,48 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
         </div>
       )}
 
-      {/* ══════════ ETAPA 3: SUCESSO ══════════ */}
+      {/* ══════════ ETAPA 3: SUCESSO E RESGATE ══════════ */}
       {etapa === 'sucesso' && (
-        <div className="text-center animate-fade-in py-8">
-          <CheckCircle size={72} weight="fill" className="text-green-500 mx-auto mb-4" />
-          <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2">Tudo Certo!</h2>
-          <p className="text-zinc-500 dark:text-zinc-400 mb-8">Comprovante enviado. Aguarde nossa validação.</p>
+        <div className="text-center animate-fade-in py-8 relative">
           
-          {/* 🚀 NOVO BOTÃO DE CALENDÁRIO */}
+          {/* 🚀 EFEITO UAU: CONFETES EXPLODINDO NA TELA INTEIRA */}
+          <Confetti 
+            width={windowSize.width} 
+            height={windowSize.height} 
+            recycle={false} 
+            numberOfPieces={600}
+            gravity={0.15}
+            style={{ position: 'fixed', top: 0, left: 0, zIndex: 99999, pointerEvents: 'none' }}
+          />
+
+          <CheckCircle size={72} weight="fill" className="text-green-500 mx-auto mb-4 relative z-10" />
+          <h2 className="text-3xl font-bold text-zinc-900 dark:text-white mb-2 relative z-10">Tudo Certo!</h2>
+          <p className="text-zinc-500 dark:text-zinc-400 mb-8 relative z-10">Agora aguarde a nossa validação no WhatsApp.</p>
+
+          <div className="bg-red-50 dark:bg-red-900/20 border-2 border-red-500 p-5 rounded-2xl mb-8 shadow-xl animate-pulse relative z-10">
+            <h3 className="text-red-600 dark:text-red-400 font-black uppercase text-lg mb-2 flex items-center justify-center gap-2">
+              <WarningCircle size={24} weight="bold" /> Faltou enviar o PIX?
+            </h3>
+            <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-4 font-medium">
+              Se a tela do seu WhatsApp não abriu no passo anterior, não se preocupe! Clique no botão abaixo para enviar o comprovante agora, ou sua reserva não será validada.
+            </p>
+            <a 
+              href={getWhatsAppUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full bg-[#25D366] hover:bg-[#1ebe57] text-white font-black py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/40 text-[16px] sm:text-lg uppercase tracking-wide hover:scale-[1.02]"
+            >
+              <WhatsappLogo size={28} weight="fill" /> ENVIE SEU COMPROVANTE AQUI
+            </a>
+          </div>
+          
           <button onClick={handleSalvarAgenda}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2 mb-4 shadow-lg shadow-blue-600/20">
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2 mb-4 shadow-lg shadow-blue-600/20 relative z-10">
             <CalendarPlus size={24} weight="bold" /> Salvar Sorteio na Agenda
           </button>
 
           <button onClick={onSucesso}
-            className="w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-3 rounded-lg transition-colors">
+            className="w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold py-3 rounded-lg transition-colors relative z-10">
             Voltar ao Início
           </button>
         </div>
