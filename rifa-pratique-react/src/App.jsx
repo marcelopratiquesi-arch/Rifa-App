@@ -52,11 +52,11 @@ export default function App() {
   const [numerosOcupados, setNumerosOcupados] = useState({ pagos: [], pendentes: [] });
   const [notificacaoAtiva, setNotificacaoAtiva] = useState(null);
 
-  // 🚀 ESTADOS DE PERFORMANCE 
+  // 🚀 ESTADOS DE PERFORMANCE (Sem tráfego falso)
   const [carregandoPedidos, setCarregandoPedidos] = useState(true);
   const [carregandoTravas, setCarregandoTravas]   = useState(true);
 
-  // A tela principal libera as interações quando as coleções baixam da internet
+  // A tela principal só é liberada quando as duas coleções baixarem da internet
   const tudoCarregado = !carregandoPedidos && !carregandoTravas;
 
   // ─── AUTENTICAÇÃO ANÔNIMA ────────────────────────────────
@@ -68,7 +68,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── ESCUTA DO BANCO DE DADOS ────────────────────────────
+  // ─── ESCUTA DO BANCO DE DADOS (Com Flag de Carregamento) ─
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'pedidos'), (snapshot) => {
       const lista = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -165,29 +165,11 @@ export default function App() {
     };
   }, [numerosOcupados, pedidos]);
 
-  // ALERTA DE ROUBO DE NÚMERO
-  useEffect(() => {
-    if (numerosSelecionados.length > 0 && tudoCarregado) {
-      const ocupadosAtuais = new Set([...pagos, ...pendentes]);
-      const selecionadosValidos = numerosSelecionados.filter(n => !ocupadosAtuais.has(n));
-      
-      if (selecionadosValidos.length !== numerosSelecionados.length) {
-        const numerosPerdidos = numerosSelecionados.filter(n => !selecionadosValidos.includes(n));
-        setNumerosSelecionados(selecionadosValidos);
-        alert(`Poxa! Alguém foi mais rápido e confirmou o(s) número(s): ${numerosPerdidos.join(', ')}.\n\nEles foram removidos da sua seleção. Escolha novos números para participar.`);
-        
-        if (selecionadosValidos.length === 0 && modoCompra === 'pagamento') {
-          setModoCompra('grelha');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-      }
-    }
-  }, [pagos, pendentes, tudoCarregado, numerosSelecionados, modoCompra]);
-
   const qtdPagos       = pagos.length;
   const qtdReservados  = pendentes.length;
   const qtdDisponiveis = TOTAL_NUMEROS - qtdPagos - qtdReservados;
-  const pctVendida     = ((qtdPagos + qtdReservados) / TOTAL_NUMEROS) * 100;
+
+  const pctVendida = ((qtdPagos + qtdReservados) / TOTAL_NUMEROS) * 100;
 
   const ultimosCompradores = pedidos
     .filter((p) => p.status === 'pago' && p.nums && p.nums.length > 0)
@@ -200,6 +182,7 @@ export default function App() {
     const interval = setInterval(() => {
       const randomBuyer = ultimosCompradores[Math.floor(Math.random() * ultimosCompradores.length)];
       setNotificacaoAtiva(randomBuyer);
+      
       setTimeout(() => setNotificacaoAtiva(null), 4000);
     }, 12000);
 
@@ -303,7 +286,6 @@ export default function App() {
           {telaAtiva === 'comprar' && modoCompra === 'grelha' && (
             <div className="animate-fade-in space-y-12">
               
-              {/* 🚀 1. HERO SECTION AGORA CARREGA IMEDIATAMENTE (Sempre visível) */}
               <div className="relative bg-zinc-900 dark:bg-zinc-900/80 rounded-[2rem] p-6 sm:p-10 overflow-hidden shadow-2xl border border-zinc-800">
                 <div className="absolute -top-24 -right-24 w-96 h-96 bg-orange-500/20 rounded-full blur-[80px] pointer-events-none" />
                 <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-purple-500/10 rounded-full blur-[80px] pointer-events-none" />
@@ -356,21 +338,19 @@ export default function App() {
                         <span className="text-xs font-bold text-orange-400 uppercase flex items-center gap-1">
                           <Lightning weight="fill" /> Ação entre amigos
                         </span>
-                        <span className="text-xs font-black text-white">
-                          {tudoCarregado ? `${pctVendida.toFixed(1)}% Esgotada` : 'Sincronizando...'}
-                        </span>
+                        <span className="text-xs font-black text-white">{tudoCarregado ? pctVendida.toFixed(1) : '--'}% Esgotada</span>
                       </div>
-                      <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden relative">
+                      <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
                         <div 
-                          className={`h-full bg-gradient-to-r from-orange-600 via-orange-400 to-yellow-400 transition-all duration-1000 ${!tudoCarregado ? 'animate-pulse w-full opacity-50' : ''}`} 
-                          style={{ width: `${tudoCarregado ? pctVendida : 100}%` }} 
+                          className="h-full bg-gradient-to-r from-orange-600 via-orange-400 to-yellow-400 transition-all duration-1000" 
+                          style={{ width: `${tudoCarregado ? pctVendida : 0}%` }} 
                         />
                       </div>
                       <p className="text-[10px] text-zinc-400 mt-2 text-center uppercase tracking-widest">
                         {tudoCarregado ? (
                           <>Apenas <strong>{qtdDisponiveis} rifas</strong> restantes!</>
                         ) : (
-                          "Calculando disponibilidade ao vivo..."
+                          "Calculando disponibilidade..."
                         )}
                       </p>
                     </div>
@@ -378,8 +358,16 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 🚀 2. PROTEÇÃO APENAS ONDE É NECESSÁRIO (Interações) */}
-              {rifaStatus !== 'aberta' && tudoCarregado ? (
+              {/* 🚀 PROTEÇÃO DE TELA DE CARREGAMENTO */}
+              {!tudoCarregado ? (
+                <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-16 shadow-xl flex flex-col items-center justify-center text-center animate-pulse">
+                  <CircleNotch size={48} className="text-orange-500 animate-spin mb-4" />
+                  <h2 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">Conectando ao vivo...</h2>
+                  <p className="text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+                    Estamos sincronizando os pagamentos com o servidor para garantir que você não escolha números já vendidos.
+                  </p>
+                </div>
+              ) : rifaStatus !== 'aberta' ? (
                 <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 shadow-xl text-center animate-fade-in mt-8">
                   {rifaStatus === 'encerrada' ? (
                     <>
@@ -407,7 +395,6 @@ export default function App() {
                       <div className="h-px flex-1 bg-gradient-to-r from-zinc-200 to-transparent dark:from-zinc-800" />
                     </div>
                     
-                    {/* BOTÕES DE SURPRESINHA (Sempre visíveis, mas travados enquanto carrega) */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {[
                         { qtd: 1,  titulo: 'Para começar', desc: '1 Número', preco: 'R$ 10,00', precoOriginal: null, destaque: false, badge: null },
@@ -419,11 +406,8 @@ export default function App() {
                       ].map(({ qtd, titulo, desc, preco, precoOriginal, destaque, badge }) => (
                         <button
                           key={qtd}
-                          disabled={!tudoCarregado}
                           onClick={() => gerarSurpresinha(qtd)}
-                          className={`relative flex flex-col items-center justify-center p-5 rounded-3xl transition-all duration-300 ${
-                            !tudoCarregado ? 'opacity-60 grayscale cursor-not-allowed' : 'hover:-translate-y-1'
-                          } ${
+                          className={`relative flex flex-col items-center justify-center p-5 rounded-3xl transition-all duration-300 hover:-translate-y-1 ${
                             destaque 
                               ? 'bg-gradient-to-b from-orange-500 to-orange-600 shadow-[0_8px_30px_rgb(249,115,22,0.3)] border-0 text-white transform scale-[1.02]' 
                               : 'bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-orange-500/50 hover:shadow-md text-zinc-900 dark:text-white'
@@ -453,32 +437,33 @@ export default function App() {
                               {precoOriginal ? 'Por ' : ''}{preco}
                             </span>
                           </div>
+
+                          {precoOriginal && (
+                            <div className={`text-[11px] font-black px-3 py-1.5 rounded-lg w-full uppercase tracking-wider border border-dashed ${
+                              destaque ? 'bg-black/20 text-white border-white/30' : 'bg-green-50 dark:bg-green-900/10 text-green-600 dark:text-green-500 border-green-300 dark:border-green-800'
+                            }`}>
+                              Você economiza R$ {Number(precoOriginal.replace(/\D/g, '')) / 100 - Number(preco.replace(/\D/g, '')) / 100}
+                            </div>
+                          )}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* CAIXAS DE INFORMAÇÃO (Com placeholders de carregamento) */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                     <div className="flex flex-col gap-4 h-full">
                       <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 flex flex-col items-center justify-center flex-1 shadow-sm">
-                        <p className="text-5xl font-black text-zinc-900 dark:text-white leading-none">
-                          {tudoCarregado ? qtdDisponiveis : <CircleNotch size={36} className="animate-spin text-zinc-300" />}
-                        </p>
+                        <p className="text-5xl font-black text-zinc-900 dark:text-white leading-none">{qtdDisponiveis}</p>
                         <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mt-2">Disponíveis</p>
                       </div>
                       
                       <div className="flex gap-4">
                         <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-900/30 rounded-3xl p-5 flex flex-col items-center justify-center flex-1 shadow-sm">
-                          <p className="text-3xl font-black text-yellow-600 dark:text-yellow-500 leading-none">
-                            {tudoCarregado ? qtdReservados : '-'}
-                          </p>
+                          <p className="text-3xl font-black text-yellow-600 dark:text-yellow-500 leading-none">{qtdReservados}</p>
                           <p className="text-[10px] font-bold text-yellow-700 dark:text-yellow-600 uppercase tracking-widest mt-2">Reservados</p>
                         </div>
                         <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-900/30 rounded-3xl p-5 flex flex-col items-center justify-center flex-1 shadow-sm">
-                          <p className="text-3xl font-black text-green-600 dark:text-green-500 leading-none">
-                            {tudoCarregado ? qtdPagos : '-'}
-                          </p>
+                          <p className="text-3xl font-black text-green-600 dark:text-green-500 leading-none">{qtdPagos}</p>
                           <p className="text-[10px] font-bold text-green-700 dark:text-green-600 uppercase tracking-widest mt-2">Pagos</p>
                         </div>
                       </div>
@@ -489,12 +474,7 @@ export default function App() {
                         <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                         <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Últimas Participações</h3>
                       </div>
-                      {!tudoCarregado ? (
-                         <div className="flex-1 flex flex-col items-center justify-center opacity-50">
-                           <CircleNotch size={24} className="animate-spin text-zinc-400 mb-2" />
-                           <p className="text-xs text-zinc-400">Buscando histórico...</p>
-                         </div>
-                      ) : ultimosCompradores.length === 0 ? (
+                      {ultimosCompradores.length === 0 ? (
                         <div className="flex-1 flex items-center justify-center">
                           <p className="text-sm text-zinc-400 italic">Seja o primeiro a garantir seus números!</p>
                         </div>
@@ -517,8 +497,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 🚀 3. O CARREGAMENTO AGORA FICA APENAS NO LUGAR DA GRADE DE NÚMEROS */}
-                  <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm min-h-[400px] flex flex-col">
+                  <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm">
                     <div className="flex flex-wrap items-center justify-center gap-6 mb-8 text-xs font-bold text-zinc-500 uppercase tracking-wider">
                       <div className="flex items-center gap-2">
                         <span className="w-3 h-3 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700" /> Disponível
@@ -534,20 +513,12 @@ export default function App() {
                       </div>
                     </div>
 
-                    {!tudoCarregado ? (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center animate-pulse py-12">
-                        <CircleNotch size={48} className="text-orange-500 animate-spin mb-4" />
-                        <h3 className="text-lg font-black text-zinc-900 dark:text-white">Carregando grelha oficial...</h3>
-                        <p className="text-sm text-zinc-500 mt-2">Buscando os números atualizados no servidor.</p>
-                      </div>
-                    ) : (
-                      <GradeNumeros 
-                        selecionados={numerosSelecionados} 
-                        onAlternarNumero={alternarNumero} 
-                        pagos={pagos} 
-                        pendentes={pendentes} 
-                      />
-                    )}
+                    <GradeNumeros 
+                      selecionados={numerosSelecionados} 
+                      onAlternarNumero={alternarNumero} 
+                      pagos={pagos} 
+                      pendentes={pendentes} 
+                    />
                   </div>
                 </>
               )}
