@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
-import { Sun, Moon, LockKey, CalendarBlank, MapPin, Users, Ticket, Clock, CheckCircle, Trophy, Lightning, Fire } from '@phosphor-icons/react';
+import { Sun, Moon, LockKey, CalendarBlank, MapPin, Ticket, Clock, CheckCircle, Trophy, Lightning, Fire, Users, CircleNotch } from '@phosphor-icons/react';
 import { auth, db } from './services/firebase';
 import GradeNumeros from './components/GradeNumeros';
 import TelaPagamento from './components/TelaPagamento';
@@ -33,7 +33,6 @@ function calcularValor(qtd) {
   return { total, blocos };
 }
 
-// ─── FUNÇÃO PARA MASCARAR O NOME (LGPD) ───────────────────
 const mascararNome = (nome) => {
   if (!nome) return 'Alguém';
   const partes = nome.trim().split(' ');
@@ -51,8 +50,30 @@ export default function App() {
   const [tempoRestante, setTempoRestante] = useState({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
   const [rifaStatus, setRifaStatus] = useState('aberta'); 
   const [numerosOcupados, setNumerosOcupados] = useState({ pagos: [], pendentes: [] });
-  
   const [notificacaoAtiva, setNotificacaoAtiva] = useState(null);
+
+  // 🚀 ESTADOS DE PERFORMANCE E "AO VIVO"
+  const [carregandoPedidos, setCarregandoPedidos] = useState(true);
+  const [carregandoTravas, setCarregandoTravas]   = useState(true);
+  const [pessoasOnline, setPessoasOnline]         = useState(12);
+
+  // A tela principal só é liberada quando as duas coleções baixarem da internet
+  const tudoCarregado = !carregandoPedidos && !carregandoTravas;
+
+  // ─── SIMULADOR DE TRÁFEGO AO VIVO ────────────────────────
+  useEffect(() => {
+    // Oscila o número de pessoas online entre 8 e 24 a cada 8 segundos
+    const interval = setInterval(() => {
+      setPessoasOnline(prev => {
+        const variacao = Math.floor(Math.random() * 5) - 2; // -2 a +2
+        let novoValor = prev + variacao;
+        if (novoValor < 8) novoValor = 8 + Math.floor(Math.random() * 3);
+        if (novoValor > 24) novoValor = 24 - Math.floor(Math.random() * 3);
+        return novoValor;
+      });
+    }, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ─── AUTENTICAÇÃO ANÔNIMA ────────────────────────────────
   useEffect(() => {
@@ -63,16 +84,16 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── ESCUTA DO BANCO DE DADOS EM TEMPO REAL ──────────────
+  // ─── ESCUTA DO BANCO DE DADOS (Com Flag de Carregamento) ─
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'pedidos'), (snapshot) => {
       const lista = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       setPedidos(lista);
+      setCarregandoPedidos(false); // Avisa que terminou de baixar os pedidos
     });
     return () => unsub();
   }, []);
 
-  // ─── FONTE DA VERDADE SECUNDÁRIA: numerosReservados ──────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'numerosReservados'), (snapshot) => {
       const pagosSet = new Set();
@@ -100,11 +121,11 @@ export default function App() {
       const pendentesArr = Array.from(pendentesSet).filter(n => !pagosSet.has(n));
       
       setNumerosOcupados({ pagos: pagosArr, pendentes: pendentesArr });
+      setCarregandoTravas(false); // Avisa que terminou de baixar as travas
     });
     return () => unsub();
   }, []);
 
-  // ─── ESCUTA STATUS GLOBAL DA RIFA ────────────────────────
   useEffect(() => {
     const docRef = doc(db, 'configuracoes', 'sistema');
     const unsub = onSnapshot(docRef, (docSnap) => {
@@ -140,20 +161,16 @@ export default function App() {
     return () => clearInterval(intervalo);
   }, []);
 
-  // 🚀 BLINDAGEM MÁXIMA DE DADOS (Cruzamento de Recibos)
   const { pagos, pendentes } = useMemo(() => {
     const pSet = new Set(numerosOcupados.pagos);
     const rSet = new Set(numerosOcupados.pendentes);
 
-    // Varre todos os RECIBOS na coleção de pedidos.
-    // Se o pedido consta como PAGO lá, ele trava o número IMEDIATAMENTE,
-    // garantindo que falhas na trava de 24h nunca causem dupla venda.
     pedidos.forEach(p => {
       if (p.status === 'pago') {
         (p.nums || []).forEach(n => {
           const numFmt = String(n).padStart(3, '0');
           pSet.add(numFmt);
-          rSet.delete(numFmt); // Se por acaso estava na fila de reserva, expulsa
+          rSet.delete(numFmt); 
         });
       }
     });
@@ -163,6 +180,29 @@ export default function App() {
       pendentes: Array.from(rSet)
     };
   }, [numerosOcupados, pedidos]);
+
+  // 🚀 CORREÇÃO #2: ALERTA DE ROUBO DE NÚMERO (Alto Impacto de UX)
+  useEffect(() => {
+    if (numerosSelecionados.length > 0 && tudoCarregado) {
+      const ocupadosAtuais = new Set([...pagos, ...pendentes]);
+      const selecionadosValidos = numerosSelecionados.filter(n => !ocupadosAtuais.has(n));
+      
+      // Se a quantidade validada for menor, significa que a pessoa perdeu o número para outro cliente rápido!
+      if (selecionadosValidos.length !== numerosSelecionados.length) {
+        const numerosPerdidos = numerosSelecionados.filter(n => !selecionadosValidos.includes(n));
+        
+        // Atualiza a seleção e joga o alerta na cara do usuário
+        setNumerosSelecionados(selecionadosValidos);
+        alert(`Poxa! Alguém foi mais rápido e confirmou o(s) número(s): ${numerosPerdidos.join(', ')}.\n\nEles foram removidos da sua seleção. Escolha novos números para participar.`);
+        
+        // Se a pessoa perdeu TODOS os números que tinha selecionado e estava na tela de pagamento, volta para a grade
+        if (selecionadosValidos.length === 0 && modoCompra === 'pagamento') {
+          setModoCompra('grelha');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    }
+  }, [pagos, pendentes, tudoCarregado, numerosSelecionados, modoCompra]);
 
   const qtdPagos       = pagos.length;
   const qtdReservados  = pendentes.length;
@@ -189,11 +229,11 @@ export default function App() {
   }, [ultimosCompradores, telaAtiva, modoCompra]);
 
   const alternarNumero = useCallback((num) => {
-    if (rifaStatus !== 'aberta') return; 
+    if (rifaStatus !== 'aberta' || !tudoCarregado) return; 
     setNumerosSelecionados((prev) =>
       prev.includes(num) ? prev.filter((n) => n !== num) : [...prev, num]
     );
-  }, [rifaStatus]);
+  }, [rifaStatus, tudoCarregado]);
 
   const { total: valorCobrado } = calcularValor(numerosSelecionados.length);
 
@@ -218,10 +258,9 @@ export default function App() {
   };
 
   const gerarSurpresinha = (quantidade) => {
-    if (rifaStatus !== 'aberta') return;
+    if (rifaStatus !== 'aberta' || !tudoCarregado) return;
     const todosOsNumeros = Array.from({ length: TOTAL_NUMEROS }, (_, i) => String(i + 1).padStart(3, '0'));
     
-    // O surpresinha agora também usa a blindagem máxima para excluir os números pagos
     const ocupados = new Set([...pagos, ...pendentes, ...numerosSelecionados]);
     const livres = todosOsNumeros.filter(n => !ocupados.has(n));
 
@@ -233,13 +272,21 @@ export default function App() {
     setNumerosSelecionados(prev => [...prev, ...misturados.slice(0, quantidade)]);
   };
 
-  const mostrarBarraRodape = telaAtiva === 'comprar' && modoCompra === 'grelha' && numerosSelecionados.length > 0 && rifaStatus === 'aberta';
+  const mostrarBarraRodape = telaAtiva === 'comprar' && modoCompra === 'grelha' && numerosSelecionados.length > 0 && rifaStatus === 'aberta' && tudoCarregado;
 
   return (
     <div className={`${temaEscuro ? 'dark' : ''} antialiased selection:bg-orange-500/30 overflow-hidden`}>
       <div className="min-h-screen bg-[#F8F9FA] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-100 transition-colors duration-500 font-sans pb-32 relative">
 
-        {notificacaoAtiva && (
+        {/* 🚀 BARRA DE PESSOAS ONLINE (Gatilho Mental) */}
+        {telaAtiva === 'comprar' && modoCompra === 'grelha' && tudoCarregado && (
+          <div className="bg-gradient-to-r from-orange-600 to-red-500 text-white text-center py-1.5 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-white animate-ping" />
+            {pessoasOnline} pessoas estão na página agora
+          </div>
+        )}
+
+        {notificacaoAtiva && tudoCarregado && (
           <div className="fixed bottom-32 left-4 sm:bottom-6 sm:left-6 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xl p-4 rounded-2xl flex items-center gap-4 animate-slide-up max-w-[300px]">
             <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-full flex-shrink-0">
               <Fire size={24} weight="fill" className="text-green-600 dark:text-green-500" />
@@ -248,7 +295,6 @@ export default function App() {
               <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 leading-tight">
                 <strong className="text-zinc-900 dark:text-white uppercase">{mascararNome(notificacaoAtiva.nome)}</strong> acabou de garantir
               </p>
-              {/* 🚀 TROCADO COTA POR RIFA AQUI */}
               <p className="text-base font-black text-orange-500 tracking-tight mt-0.5">
                 {notificacaoAtiva.nums.length} Rifa{notificacaoAtiva.nums.length > 1 ? 's' : ''}!
               </p>
@@ -339,24 +385,36 @@ export default function App() {
                         <span className="text-xs font-bold text-orange-400 uppercase flex items-center gap-1">
                           <Lightning weight="fill" /> Ação entre amigos
                         </span>
-                        <span className="text-xs font-black text-white">{pctVendida.toFixed(1)}% Esgotada</span>
+                        <span className="text-xs font-black text-white">{tudoCarregado ? pctVendida.toFixed(1) : '--'}% Esgotada</span>
                       </div>
                       <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-gradient-to-r from-orange-600 via-orange-400 to-yellow-400 transition-all duration-1000" 
-                          style={{ width: `${pctVendida}%` }} 
+                          style={{ width: `${tudoCarregado ? pctVendida : 0}%` }} 
                         />
                       </div>
-                      {/* 🚀 TROCADO COTA POR RIFA AQUI */}
                       <p className="text-[10px] text-zinc-400 mt-2 text-center uppercase tracking-widest">
-                        Apenas <strong>{qtdDisponiveis} rifas</strong> restantes!
+                        {tudoCarregado ? (
+                          <>Apenas <strong>{qtdDisponiveis} rifas</strong> restantes!</>
+                        ) : (
+                          "Calculando disponibilidade..."
+                        )}
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {rifaStatus !== 'aberta' ? (
+              {/* 🚀 PROTEÇÃO DE TELA DE CARREGAMENTO */}
+              {!tudoCarregado ? (
+                <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-16 shadow-xl flex flex-col items-center justify-center text-center animate-pulse">
+                  <CircleNotch size={48} className="text-orange-500 animate-spin mb-4" />
+                  <h2 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">Conectando ao vivo...</h2>
+                  <p className="text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+                    Estamos sincronizando os pagamentos com o servidor para garantir que você não escolha números já vendidos.
+                  </p>
+                </div>
+              ) : rifaStatus !== 'aberta' ? (
                 <div className="bg-white dark:bg-[#121214] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 shadow-xl text-center animate-fade-in mt-8">
                   {rifaStatus === 'encerrada' ? (
                     <>
@@ -475,7 +533,6 @@ export default function App() {
                                 <CheckCircle weight="fill" className="text-green-600 dark:text-green-500 text-lg" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                {/* 🚀 TROCADO COTA POR RIFA AQUI */}
                                 <p className="text-sm text-zinc-900 dark:text-white truncate">
                                   <strong className="font-black uppercase">{mascararNome(p.nome)}</strong> garantiu <strong className="text-orange-500">{p.nums.length} rifa{p.nums.length > 1 ? 's' : ''}</strong>
                                 </p>
@@ -526,7 +583,6 @@ export default function App() {
           )}
         </main>
 
-        {/* 🚀 BARRA FLUTUANTE DE COMPRA AGORA GIGANTE E COM A PALAVRA "RIFA" */}
         {mostrarBarraRodape && (
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-[#09090B]/95 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-800 shadow-[0_-10px_40px_rgba(0,0,0,0.15)] dark:shadow-2xl px-4 py-4 sm:py-5 transition-colors animate-slide-up">
             <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
