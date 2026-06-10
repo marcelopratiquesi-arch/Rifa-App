@@ -163,6 +163,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     setPixCopiado(true);
   };
 
+  // 🚀 ADICIONADA A OPÇÃO DE ENTRAR NO GRUPO DA FESTA NA MENSAGEM PADRÃO
   const getWhatsAppUrl = () => {
     const valor = Number(valorCobrado).toFixed(2).replace('.', ',');
     const msg = 
@@ -179,6 +180,8 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
       `- *Data:* 22/07 às 20h\n` +
       `- *Local:* Pratique Fitness Santa Inês II\n` +
       `- *Endereço:* Av. José Cândido da Silveira, 2790\n\n` +
+      `*Acesse este link para entrar no meu grupo do WhatsApp e ficar por dentro das novidades também:*\n` +
+      `https://chat.whatsapp.com/Lfr9XwUhud6BhhY5dK58N8?s=sh&p=a&mlu=2&amv=0\n\n` +
       `Segue em anexo o meu comprovante PIX!`;
 
     return `https://wa.me/${NUMERO_WHATSAPP_ADMIN}?text=${encodeURIComponent(msg)}`;
@@ -308,7 +311,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
              </p>
           </div>
 
-          {/* 🚀 CRONÔMETRO VERMELHO GIGANTE */}
+          {/* CRONÔMETRO VERMELHO GIGANTE */}
           {!tempoEsgotado ? (
             <div className="flex flex-col justify-center items-center gap-1 text-zinc-800 dark:text-zinc-200 mb-6 font-black text-lg bg-red-50 dark:bg-red-900/10 py-5 rounded-2xl border-2 border-red-200 dark:border-red-900/40 shadow-inner">
               <div className="flex items-center gap-2 text-red-600 dark:text-red-500 uppercase tracking-widest text-xs sm:text-sm">
@@ -322,7 +325,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
             </div>
           )}
 
-          {/* 🚀 1º PASSO: APENAS COPIE A CHAVE PIX */}
+          {/* 1º PASSO: APENAS COPIE A CHAVE PIX */}
           <div className={`p-5 rounded-2xl border-2 transition-all duration-300 mb-5 ${pixCopiado ? 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 opacity-60' : 'bg-orange-50 dark:bg-orange-950/20 border-orange-500 shadow-md'}`}>
             <h3 className="font-black text-orange-600 dark:text-orange-500 uppercase tracking-widest text-sm sm:text-base mb-2">
               1º Passo: Apenas copie a chave PIX
@@ -336,7 +339,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
             </button>
           </div>
 
-          {/* 🚀 2º PASSO: INSTRUÇÃO DO WHATSAPP DE ACORDO COM O SEU COMANDO */}
+          {/* 2º PASSO: INSTRUÇÃO DO WHATSAPP */}
           <div className={`p-5 rounded-2xl border-2 transition-all duration-300 ${pixCopiado ? 'bg-[#25D366]/10 border-[#25D366] shadow-lg shadow-[#25D366]/20' : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'}`}>
             <h3 className="font-black text-[#25D366] uppercase tracking-widest text-sm sm:text-base mb-2">
               2º Passo:
@@ -346,7 +349,7 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
             </p>
             
             <button onClick={handleEnviarWhatsApp} disabled={aCarregar}
-              className={`w-full text-white font-black py-4 rounded-xl flex justify-center items-center gap-2 text-lg transition-all shadow-md uppercase tracking-wider ${pixCopiado ? 'bg-[#25D366] hover:bg-[#1ebe57] animate-pulse scale-[1.02] shadow-xl shadow-[#25D366]/30' : 'bg-zinc-400 dark:bg-zinc-700 hover:bg-[#25D366]'}`}>
+              className={`w-full text-white font-black py-4 rounded-xl flex justify-center items-center gap-2 text-lg transition-all shadow-md uppercase tracking-wider ${pixCopiado ? 'bg-[#25D366] hover:bg-[#1ebe57] animate-pulse scale-[1.02] shadow-xl shadow-[#25D366]/40' : 'bg-zinc-400 dark:bg-zinc-700 hover:bg-[#25D366]'}`}>
               <WhatsappLogo size={26} weight="fill" /> CLIQUE AQUI PARA ENVIAR
             </button>
           </div>
@@ -357,7 +360,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
       {etapa === 'sucesso' && (
         <div className="text-center animate-fade-in py-8 relative">
           
-          {/* EFEITO UAU: CONFETES EXPLODINDO NA TELA INTEIRA */}
           <Confetti 
             width={windowSize.width} 
             height={windowSize.height} 
