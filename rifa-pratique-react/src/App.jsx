@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
-import { Sun, Moon, LockKey, CalendarBlank, MapPin, Ticket, Clock, CheckCircle, Trophy, Lightning, Fire, Users, CircleNotch } from '@phosphor-icons/react';
+import { Sun, Moon, LockKey, CalendarBlank, MapPin, Ticket, Clock, CheckCircle, Trophy, Lightning, Fire, CircleNotch } from '@phosphor-icons/react';
 import { auth, db } from './services/firebase';
 import GradeNumeros from './components/GradeNumeros';
 import TelaPagamento from './components/TelaPagamento';
@@ -52,28 +52,12 @@ export default function App() {
   const [numerosOcupados, setNumerosOcupados] = useState({ pagos: [], pendentes: [] });
   const [notificacaoAtiva, setNotificacaoAtiva] = useState(null);
 
-  // 🚀 ESTADOS DE PERFORMANCE E "AO VIVO"
+  // 🚀 ESTADOS DE PERFORMANCE (Sem tráfego falso)
   const [carregandoPedidos, setCarregandoPedidos] = useState(true);
   const [carregandoTravas, setCarregandoTravas]   = useState(true);
-  const [pessoasOnline, setPessoasOnline]         = useState(12);
 
   // A tela principal só é liberada quando as duas coleções baixarem da internet
   const tudoCarregado = !carregandoPedidos && !carregandoTravas;
-
-  // ─── SIMULADOR DE TRÁFEGO AO VIVO ────────────────────────
-  useEffect(() => {
-    // Oscila o número de pessoas online entre 8 e 24 a cada 8 segundos
-    const interval = setInterval(() => {
-      setPessoasOnline(prev => {
-        const variacao = Math.floor(Math.random() * 5) - 2; // -2 a +2
-        let novoValor = prev + variacao;
-        if (novoValor < 8) novoValor = 8 + Math.floor(Math.random() * 3);
-        if (novoValor > 24) novoValor = 24 - Math.floor(Math.random() * 3);
-        return novoValor;
-      });
-    }, 8000);
-    return () => clearInterval(interval);
-  }, []);
 
   // ─── AUTENTICAÇÃO ANÔNIMA ────────────────────────────────
   useEffect(() => {
@@ -89,7 +73,7 @@ export default function App() {
     const unsub = onSnapshot(collection(db, 'pedidos'), (snapshot) => {
       const lista = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       setPedidos(lista);
-      setCarregandoPedidos(false); // Avisa que terminou de baixar os pedidos
+      setCarregandoPedidos(false); 
     });
     return () => unsub();
   }, []);
@@ -121,7 +105,7 @@ export default function App() {
       const pendentesArr = Array.from(pendentesSet).filter(n => !pagosSet.has(n));
       
       setNumerosOcupados({ pagos: pagosArr, pendentes: pendentesArr });
-      setCarregandoTravas(false); // Avisa que terminou de baixar as travas
+      setCarregandoTravas(false); 
     });
     return () => unsub();
   }, []);
@@ -180,29 +164,6 @@ export default function App() {
       pendentes: Array.from(rSet)
     };
   }, [numerosOcupados, pedidos]);
-
-  // 🚀 CORREÇÃO #2: ALERTA DE ROUBO DE NÚMERO (Alto Impacto de UX)
-  useEffect(() => {
-    if (numerosSelecionados.length > 0 && tudoCarregado) {
-      const ocupadosAtuais = new Set([...pagos, ...pendentes]);
-      const selecionadosValidos = numerosSelecionados.filter(n => !ocupadosAtuais.has(n));
-      
-      // Se a quantidade validada for menor, significa que a pessoa perdeu o número para outro cliente rápido!
-      if (selecionadosValidos.length !== numerosSelecionados.length) {
-        const numerosPerdidos = numerosSelecionados.filter(n => !selecionadosValidos.includes(n));
-        
-        // Atualiza a seleção e joga o alerta na cara do usuário
-        setNumerosSelecionados(selecionadosValidos);
-        alert(`Poxa! Alguém foi mais rápido e confirmou o(s) número(s): ${numerosPerdidos.join(', ')}.\n\nEles foram removidos da sua seleção. Escolha novos números para participar.`);
-        
-        // Se a pessoa perdeu TODOS os números que tinha selecionado e estava na tela de pagamento, volta para a grade
-        if (selecionadosValidos.length === 0 && modoCompra === 'pagamento') {
-          setModoCompra('grelha');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-      }
-    }
-  }, [pagos, pendentes, tudoCarregado, numerosSelecionados, modoCompra]);
 
   const qtdPagos       = pagos.length;
   const qtdReservados  = pendentes.length;
@@ -277,14 +238,6 @@ export default function App() {
   return (
     <div className={`${temaEscuro ? 'dark' : ''} antialiased selection:bg-orange-500/30 overflow-hidden`}>
       <div className="min-h-screen bg-[#F8F9FA] dark:bg-[#09090B] text-zinc-900 dark:text-zinc-100 transition-colors duration-500 font-sans pb-32 relative">
-
-        {/* 🚀 BARRA DE PESSOAS ONLINE (Gatilho Mental) */}
-        {telaAtiva === 'comprar' && modoCompra === 'grelha' && tudoCarregado && (
-          <div className="bg-gradient-to-r from-orange-600 to-red-500 text-white text-center py-1.5 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-white animate-ping" />
-            {pessoasOnline} pessoas estão na página agora
-          </div>
-        )}
 
         {notificacaoAtiva && tudoCarregado && (
           <div className="fixed bottom-32 left-4 sm:bottom-6 sm:left-6 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-2xl p-4 rounded-2xl flex items-center gap-4 animate-slide-up max-w-[300px]">
