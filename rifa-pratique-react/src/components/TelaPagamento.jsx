@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, CheckCircle, WhatsappLogo, UserList, Timer, WarningCircle, Storefront, Info, CalendarPlus } from '@phosphor-icons/react';
+import { ArrowLeft, Copy, CheckCircle, WhatsappLogo, UserList, Timer, WarningCircle, Storefront, Info, CalendarPlus, X, Plus, Ticket } from '@phosphor-icons/react';
 import { doc, updateDoc, collection, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import Confetti from 'react-confetti';
 
-export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSucesso }) {
+export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSucesso, onRemoverNumero }) {
   const [etapa, setEtapa]               = useState('formulario');
   const [pedidoIdGerado, setPedidoIdGerado] = useState(null);
   const [aCarregar, setACarregar]       = useState(false);
@@ -163,7 +163,6 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
     setPixCopiado(true);
   };
 
-  // 🚀 ADICIONADA A OPÇÃO DE ENTRAR NO GRUPO DA FESTA NA MENSAGEM PADRÃO
   const getWhatsAppUrl = () => {
     const valor = Number(valorCobrado).toFixed(2).replace('.', ',');
     const msg = 
@@ -219,16 +218,50 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
       {/* ══════════ ETAPA 1: FORMULÁRIO ══════════ */}
       {etapa === 'formulario' && (
         <>
-          <button onClick={onVoltar} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-white mb-6 flex items-center gap-1 text-sm">
+          <button onClick={onVoltar} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-white mb-4 flex items-center gap-1 text-sm">
             <ArrowLeft size={16} /> Voltar
           </button>
 
-          <h2 className="text-2xl font-bold mb-2 text-center text-zinc-900 dark:text-white flex items-center justify-center gap-2">
+          <h2 className="text-2xl font-bold mb-4 text-center text-zinc-900 dark:text-white flex items-center justify-center gap-2">
             <UserList size={24} className="text-orange-500" /> Cadastro Oficial
           </h2>
-          <p className="text-center text-zinc-500 mb-6 text-sm">
-            Total: <span className="text-green-600 font-black text-lg">R$ {valorCobrado.toFixed(2)}</span>
-          </p>
+
+          {/* 🚀 RESUMO DINÂMICO DOS NÚMEROS E VALOR (Carrinho Inteligente) */}
+          <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 mb-6 shadow-sm">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-sm font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-wide">
+                Suas Rifas ({numeros.length}):
+              </span>
+              <span className="text-green-600 dark:text-green-500 font-black text-xl">
+                R$ {valorCobrado.toFixed(2).replace('.', ',')}
+              </span>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 mb-4">
+              {numeros.map(num => (
+                <div key={num} className="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-lg px-2.5 py-1.5 flex items-center gap-1 font-black text-sm shadow-sm transition-all hover:border-red-300 dark:hover:border-red-800 group">
+                  <Ticket size={16} className="text-orange-500" />
+                  <span>{num}</span>
+                  <button 
+                    type="button"
+                    onClick={() => onRemoverNumero(num)}
+                    className="text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors ml-1 p-0.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20"
+                    title="Remover número"
+                  >
+                    <X size={14} weight="bold" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button 
+              type="button" 
+              onClick={onVoltar}
+              className="w-full bg-orange-50 dark:bg-orange-900/10 hover:bg-orange-100 dark:hover:bg-orange-900/20 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-800/30 font-bold py-2.5 rounded-lg text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus size={16} weight="bold" /> Quero adicionar mais números
+            </button>
+          </div>
 
           {numerosConflito.length > 0 && (
             <div className="bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 rounded-lg p-4 mb-4 text-center">
@@ -283,13 +316,13 @@ export default function TelaPagamento({ numeros, valorCobrado, onVoltar, onSuces
               className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 text-zinc-900 dark:text-white focus:border-orange-500 focus:outline-none resize-none" />
 
             <button type="submit" disabled={aCarregar}
-              className="w-full bg-orange-600 hover:bg-orange-500 disabled:bg-zinc-400 text-white font-bold py-3.5 rounded-lg mt-6 shadow-lg text-lg">
+              className="w-full bg-orange-600 hover:bg-orange-500 disabled:bg-zinc-400 text-white font-bold py-3.5 rounded-lg mt-6 shadow-lg text-lg transition-colors">
               {aCarregar ? 'Verificando...' : 'Prosseguir para o PIX'}
             </button>
 
             {numerosConflito.length > 0 && (
               <button type="button" onClick={onVoltar}
-                className="w-full border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold py-3 rounded-lg text-sm">
+                className="w-full border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold py-3 rounded-lg text-sm transition-colors mt-2">
                 Voltar e escolher outros números
               </button>
             )}

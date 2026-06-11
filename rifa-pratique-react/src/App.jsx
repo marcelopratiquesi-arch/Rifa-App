@@ -52,7 +52,7 @@ export default function App() {
   const [numerosOcupados, setNumerosOcupados] = useState({ pagos: [], pendentes: [] });
   const [notificacaoAtiva, setNotificacaoAtiva] = useState(null);
 
-  // 🚀 ESTADOS DE PERFORMANCE 
+  // 🚀 ESTADOS DE PERFORMANCE (Sem tráfego falso)
   const [carregandoPedidos, setCarregandoPedidos] = useState(true);
   const [carregandoTravas, setCarregandoTravas]   = useState(true);
 
@@ -68,7 +68,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ─── ESCUTA DO BANCO DE DADOS ──────────────────────────
+  // ─── ESCUTA DO BANCO DE DADOS (Com Flag de Carregamento) ─
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'pedidos'), (snapshot) => {
       const lista = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -136,7 +136,7 @@ export default function App() {
           segundos: Math.floor((diferenca % (1000 * 60)) / 1000)
         });
       } else {
-        setTempoRestante({ dias: 0, horas: 0, minutos: 0, segundos: 0 });
+        setTempoRestante({ dias: 0, hours: 0, minutos: 0, segundos: 0 });
       }
     };
 
@@ -164,8 +164,6 @@ export default function App() {
       pendentes: Array.from(rSet)
     };
   }, [numerosOcupados, pedidos]);
-
-  // AQUI EU APAGUEI COMPLETAMENTE O "useEffect" DO ALERTA DE ROUBO!
 
   const qtdPagos       = pagos.length;
   const qtdReservados  = pendentes.length;
@@ -352,7 +350,7 @@ export default function App() {
                         {tudoCarregado ? (
                           <>Apenas <strong>{qtdDisponiveis} rifas</strong> restantes!</>
                         ) : (
-                          "Calculando disponibilidade..."
+                          "Calculando availability..."
                         )}
                       </p>
                     </div>
@@ -463,7 +461,7 @@ export default function App() {
                           <p className="text-[10px] font-bold text-yellow-700 dark:text-yellow-600 uppercase tracking-widest mt-2">Reservados</p>
                         </div>
                         <div className="bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-900/30 rounded-3xl p-5 flex flex-col items-center justify-center flex-1 shadow-sm">
-                          <p className="text-3xl font-black text-green-600 dark:text-green-500 leading-none">
+                          <p className="text-3xl font-black text-green-600 dark:text-green-400 knitting-none">
                             {tudoCarregado ? qtdPagos : '-'}
                           </p>
                           <p className="text-[10px] font-bold text-green-700 dark:text-green-600 uppercase tracking-widest mt-2">Pagos</p>
@@ -547,6 +545,13 @@ export default function App() {
               valorCobrado={valorCobrado} 
               onVoltar={voltarParaGrelha} 
               onSucesso={finalizarCompra} 
+              onRemoverNumero={(numRemovido) => {
+                const novaLista = numerosSelecionados.filter(n => n !== numRemovido);
+                setNumerosSelecionados(novaLista);
+                if (novaLista.length === 0) {
+                  voltarParaGrelha();
+                }
+              }}
             />
           )}
         </main>
