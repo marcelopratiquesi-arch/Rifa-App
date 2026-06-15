@@ -11,17 +11,19 @@ import autoTable from 'jspdf-autotable';
 // Configurações e Funções Auxiliares Isoladas
 const TOTAL_RIFAS = 1000;
 const META_POR_VENDEDOR = 20; 
-const fmtValor = (v) => Number(v).toFixed(2).replace('.', ',');
+
+// 🚀 CORREÇÃO DO FORMATO DE MOEDA (Agora com ponto de milhar: 9.212,12)
+const fmtValor = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
 
-// Limpador absoluto de strings (mata espaços invisíveis e diferenças de maiúsculas)
+// Limpador absoluto de strings
 const normalizarTexto = (texto) => String(texto || '').trim().toUpperCase();
 
 export default function AbaDashboard({ pedidos, vendedores }) {
   
   // ─── ESTADOS DE FILTRO E ORDENAÇÃO ────────────────────────────
   const [filtroUnidade, setFiltroUnidade] = useState('Todas');
-  const [ordenacao, setOrdenacao]         = useState('rifas'); // 🚀 Alterado de 'cotas' para 'rifas'
+  const [ordenacao, setOrdenacao]         = useState('rifas'); 
   const [ordemDirecao, setOrdemDirecao]   = useState('desc');  
 
   // 🚀 ESTADOS DO PREVIEW DO WHATSAPP
@@ -29,7 +31,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   const [mensagemZap, setMensagemZap]             = useState('');
   const [textoCopiado, setTextoCopiado]           = useState(false); 
 
-  // ─── 1. PERFORMANCE: USEMEMO (Evita travamentos na interface) ──
+  // ─── 1. PERFORMANCE E CÁLCULOS BLINDADOS (USEMEMO) ──
   const dadosMemoizados = useMemo(() => {
     const pedidosAprovados = pedidos.filter((p) => p.status === 'pago');
     const pedidosPendentes = pedidos.filter((p) => p.status === 'pendente');
@@ -39,16 +41,11 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     const totalRifasVendidas   = pedidosAprovados.reduce((s, p) => s + (p.nums || []).length, 0);
     const totalRifasReservadas = pedidosPendentes.reduce((s, p) => s + (p.nums || []).length, 0);
-    
-    const pctVendidas          = Math.min((totalRifasVendidas / TOTAL_RIFAS) * 100, 100).toFixed(1);
-    const pctReservadas        = Math.min((totalRifasReservadas / TOTAL_RIFAS) * 100, 100).toFixed(1);
-    const pctTotal             = Math.min(((totalRifasVendidas + totalRifasReservadas) / TOTAL_RIFAS) * 100, 100).toFixed(1);
 
     const ticketMedio = pedidosAprovados.length > 0 ? (totalFaturado / pedidosAprovados.length) : 0;
     const mediaRifas = pedidosAprovados.length > 0 ? (totalRifasVendidas / pedidosAprovados.length) : 0;
     const projecaoFaturamento = totalRifasVendidas > 0 ? (totalFaturado / totalRifasVendidas) * TOTAL_RIFAS : 0;
 
-    // Descobre o pacote mais vendido
     const contagem = {};
     pedidosAprovados.forEach(p => {
       const qtd = (p.nums || []).length;
@@ -57,14 +54,18 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     const ordenado = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
     const topPacote = ordenado.length > 0 ? { qtd: ordenado[0][0], vezes: ordenado[0][1] } : null;
 
-    // ─── CORREÇÃO DE CASING (Unidades padronizadas blindadas) ────────
+    // OTIMIZAÇÃO O(1): Criação de Dicionário de Vendedores para Relatórios Instantâneos
     const mapaVendedores = {};
+    const dicionarioUnidadesRapido = {}; 
+
     vendedores.forEach((v) => {
       const chaveNome = normalizarTexto(v.nome);
       let chaveUnidade = normalizarTexto(v.unidade || 'SANTA INÊS 1');
       if (chaveUnidade === 'SANTA INES 1') chaveUnidade = 'SANTA INÊS 1';
       if (chaveUnidade === 'SANTA INES 2') chaveUnidade = 'SANTA INÊS 2';
+      
       mapaVendedores[chaveNome] = chaveUnidade;
+      dicionarioUnidadesRapido[chaveNome] = chaveUnidade;
     });
 
     const rv = {};
@@ -74,7 +75,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     vendedores.forEach(v => {
       if (v.ativo !== false) {
         const chaveNome = normalizarTexto(v.nome);
-        rv[chaveNome] = { valor: 0, rifas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: mapaVendedores[chaveNome] };
+        rv[chaveNome] = { valor: 0, rifas: 0, unidade: mapaVendedores[chaveNome] };
       }
     });
 
@@ -83,30 +84,19 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       const chaveFinal = vendChave && mapaVendedores[vendChave] ? vendChave : (vendChave === '' ? 'VENDA DIRETA' : vendChave);
       const und = mapaVendedores[chaveFinal] || 'VENDA DIRETA';
       
-      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, rifas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
+      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, rifas: 0, unidade: und };
       
       rv[chaveFinal].valor += Number(p.valor);
       rv[chaveFinal].rifas += (p.nums || []).length;
-      rv[chaveFinal].pedidosPagos += 1;
       
       if (!ru[und]) ru[und] = { valor: 0, rifas: 0 };
       ru[und].valor += Number(p.valor);
       ru[und].rifas += (p.nums || []).length;
     });
 
-    pedidos.forEach(p => {
-      const vendChave = normalizarTexto(p.vendedor);
-      const chaveFinal = vendChave && mapaVendedores[vendChave] ? vendChave : (vendChave === '' ? 'VENDA DIRETA' : vendChave);
-      const und = mapaVendedores[chaveFinal] || 'VENDA DIRETA';
-
-      if (!rv[chaveFinal]) rv[chaveFinal] = { valor: 0, rifas: 0, pedidosCriados: 0, pedidosPagos: 0, unidade: und };
-      rv[chaveFinal].pedidosCriados += 1;
-    });
-
     const rankVend = Object.entries(rv).map(([n, d]) => ({ 
       nome: n,
-      ...d, 
-      conversao: d.pedidosCriados > 0 ? Number(((d.pedidosPagos / d.pedidosCriados) * 100).toFixed(0)) : 0 
+      ...d
     }));
 
     const rankUnit = Object.entries(ru)
@@ -116,13 +106,13 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     return {
       totalFaturado, totalPendente, ticketMedio, mediaRifas, projecaoFaturamento,
-      topPacote, rankVend, rankUnit
+      topPacote, rankVend, rankUnit, dicionarioUnidadesRapido
     };
   }, [pedidos, vendedores]); 
 
   const {
     totalFaturado, totalPendente, ticketMedio, mediaRifas, projecaoFaturamento,
-    topPacote, rankVend, rankUnit
+    topPacote, rankVend, rankUnit, dicionarioUnidadesRapido
   } = dadosMemoizados;
 
   const vendedoresFiltrados = filtroUnidade === 'Todas' 
@@ -160,6 +150,14 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       .slice(0, 3);
   }, [vendedoresFiltrados]);
 
+  // LINHA DE TOTAIS DINÂMICA DA TABELA
+  const totaisTabela = useMemo(() => {
+    return vendedoresFiltrados.reduce((acc, curr) => ({
+      rifas: acc.rifas + curr.rifas,
+      valor: acc.valor + curr.valor
+    }), { rifas: 0, valor: 0 });
+  }, [vendedoresFiltrados]);
+
   let msgBatalhaUnidades = null;
   if (rankUnit.length >= 2 && rankUnit[0].valor > 0) {
     const diferencaValor = rankUnit[0].valor - rankUnit[1].valor;
@@ -171,6 +169,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   }
 
+  // GERADOR DO RANKING GAMIFICADO DO WHATSAPP
   const prepararRankingWhatsApp = () => {
     const rankingInquebravel = [...vendedoresFiltrados]
       .filter(v => v.nome !== 'VENDA DIRETA')
@@ -191,12 +190,20 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     let pos = 1;
 
+    // Função para definir o Emoji com base na meta
+    const getEmojiMeta = (rifas) => {
+      if (rifas >= META_POR_VENDEDOR) return '🟢';
+      if (rifas > 0) return '🟡';
+      return '🔴';
+    };
+
     if (pontuaram.length > 0) {
       linhas.push('*VENDAS REALIZADAS:*');
       pontuaram.forEach((v) => {
         const nome  = v.nome.split(' ')[0];
         const rifas = String(v.rifas).padStart(2, '0');
-        linhas.push(`${pos}º ${nome} - ${rifas} rifas`);
+        const emoji = getEmojiMeta(v.rifas);
+        linhas.push(`${pos}º ${emoji} ${nome} - ${rifas}/${META_POR_VENDEDOR} rifas`);
         pos++;
       });
     }
@@ -206,7 +213,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       linhas.push('*AINDA NÃO PONTUARAM:*');
       zerados.forEach((v) => {
         const nome = v.nome.split(' ')[0];
-        linhas.push(`${pos}º ${nome} - 0 rifas`);
+        linhas.push(`${pos}º 🔴 ${nome} - 00/${META_POR_VENDEDOR} rifas`);
         pos++;
       });
     }
@@ -230,12 +237,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   };
 
-  const pegarUnidadeDoVendedor = (nomeVendedor) => {
-    const chave = normalizarTexto(nomeVendedor);
-    const found = vendedores.find(v => normalizarTexto(v.nome) === chave);
-    return found && found.unidade ? normalizarTexto(found.unidade) : 'VENDA DIRETA';
-  };
-
+  // EXPORTAÇÕES RÁPIDAS
   const exportarExcel = () => {
     const dados = pedidos.map((p) => {
       const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
@@ -246,7 +248,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
         Telefone: p.tel, 
         CPF: p.cpf || '-',
         Vendedor: vendFinal, 
-        Unidade: pegarUnidadeDoVendedor(vendFinal),
+        Unidade: dicionarioUnidadesRapido[vendFinal] || 'VENDA DIRETA',
         Status: normalizarTexto(p.status), 
         Números: (p.nums || []).join(', '), 
         Qtd: (p.nums || []).length, 
@@ -266,7 +268,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     pagos.forEach(p => {
       const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
-      const unidade = pegarUnidadeDoVendedor(vendFinal);
+      const unidade = dicionarioUnidadesRapido[vendFinal] || 'VENDA DIRETA';
       
       if (p.nums && Array.isArray(p.nums)) {
         p.nums.forEach(num => {
@@ -300,7 +302,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
       pedidos.forEach(p => {
         const vendFinal = normalizarTexto(p.vendedor) || 'VENDA DIRETA';
-        const unidade = pegarUnidadeDoVendedor(vendFinal);
+        const unidade = dicionarioUnidadesRapido[vendFinal] || 'VENDA DIRETA';
         
         if (p.nums && Array.isArray(p.nums)) {
           p.nums.forEach(num => {
@@ -459,7 +461,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
         </div>
       </div>
 
-      {/* ── RANKING GERAL E CONVERSÃO COM FILTRO ── */}
+      {/* ── RANKING GERAL E TABELA ── */}
       <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden shadow-sm">
         
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -482,33 +484,26 @@ export default function AbaDashboard({ pedidos, vendedores }) {
           </div>
         </div>
 
-        {top3Vendedores.length > 0 && (
-          <div className="mb-10 mt-4 flex flex-row justify-center items-end gap-2 sm:gap-4 px-2">
-            {top3Vendedores[1] && (
-              <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-zinc-400 h-[120px] sm:h-[140px] shadow-sm">
-                <span className="text-2xl sm:text-3xl mb-1 drop-shadow-md">🥈</span>
-                <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[1].nome.split(' ')[0]}</span>
-                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[1].rifas} RIFAS</span>
-              </div>
-            )}
-            
-            {top3Vendedores[0] && (
-              <div className="flex-1 max-w-[170px] bg-gradient-to-t from-orange-50 to-white dark:from-orange-900/20 dark:to-zinc-900 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-yellow-500 h-[150px] sm:h-[180px] shadow-xl z-10 transform -translate-y-2">
-                <span className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">🥇</span>
-                <span className="font-black text-orange-600 dark:text-orange-500 text-sm sm:text-base text-center truncate w-full uppercase">{top3Vendedores[0].nome.split(' ')[0]}</span>
-                <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black">{top3Vendedores[0].rifas} RIFAS</span>
-              </div>
-            )}
-            
-            {top3Vendedores[2] && (
-              <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-orange-700 h-[100px] sm:h-[120px] shadow-sm">
-                <span className="text-xl sm:text-2xl mb-1 drop-shadow-md">🥉</span>
-                <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[2].nome.split(' ')[0]}</span>
-                <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[2].rifas} RIFAS</span>
-              </div>
-            )}
+        {/* 🚀 PÓDIO INTELIGENTE */}
+        <div className="mb-10 mt-4 flex flex-row justify-center items-end gap-2 sm:gap-4 px-2">
+          <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-zinc-400 h-[120px] sm:h-[140px] shadow-sm">
+            <span className="text-2xl sm:text-3xl mb-1 drop-shadow-md">🥈</span>
+            <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[1] ? top3Vendedores[1].nome.split(' ')[0] : '---'}</span>
+            <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[1] ? `${top3Vendedores[1].rifas} RIFAS` : '-'}</span>
           </div>
-        )}
+          
+          <div className="flex-1 max-w-[170px] bg-gradient-to-t from-orange-50 to-white dark:from-orange-900/20 dark:to-zinc-900 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-yellow-500 h-[150px] sm:h-[180px] shadow-xl z-10 transform -translate-y-2">
+            <span className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">🥇</span>
+            <span className="font-black text-orange-600 dark:text-orange-500 text-sm sm:text-base text-center truncate w-full uppercase">{top3Vendedores[0] ? top3Vendedores[0].nome.split(' ')[0] : '---'}</span>
+            <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black">{top3Vendedores[0] ? `${top3Vendedores[0].rifas} RIFAS` : '-'}</span>
+          </div>
+          
+          <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-orange-700 h-[100px] sm:h-[120px] shadow-sm">
+            <span className="text-xl sm:text-2xl mb-1 drop-shadow-md">🥉</span>
+            <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[2] ? top3Vendedores[2].nome.split(' ')[0] : '---'}</span>
+            <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[2] ? `${top3Vendedores[2].rifas} RIFAS` : '-'}</span>
+          </div>
+        </div>
         
         <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="w-full text-left text-sm whitespace-nowrap">
@@ -537,11 +532,8 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                   <div className="flex items-center justify-center gap-1">QTD RIFAS {ordenacao === 'rifas' && (ordemDirecao === 'asc' ? <CaretUp weight="bold"/> : <CaretDown weight="bold"/>)}</div>
                 </th>
                 
-                <th 
-                  className="p-4 font-black uppercase text-xs tracking-wider text-center cursor-pointer hover:text-zinc-900 dark:hover:text-white transition-colors"
-                  onClick={() => handleSort('conversao')}
-                >
-                  <div className="flex items-center justify-center gap-1">CONVERSÃO {ordenacao === 'conversao' && (ordemDirecao === 'asc' ? <CaretUp weight="bold"/> : <CaretDown weight="bold"/>)}</div>
+                <th className="p-4 font-black uppercase text-xs tracking-wider text-center">
+                  <div className="flex items-center justify-center gap-1">META ({META_POR_VENDEDOR})</div>
                 </th>
                 
                 <th 
@@ -568,27 +560,34 @@ export default function AbaDashboard({ pedidos, vendedores }) {
                     <td className="p-4 text-center text-zinc-800 dark:text-zinc-200 font-mono text-xl font-black bg-zinc-50 dark:bg-zinc-900/50 group-hover:bg-transparent transition-colors">
                       {v.rifas}
                     </td>
+                    
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-3">
-                        <span className="font-black text-sm w-12 text-right">{v.conversao}%</span>
+                        <span className="font-black text-sm w-12 text-right">{v.rifas}/{META_POR_VENDEDOR}</span>
                         <div className="relative w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden shadow-inner">
                           <div 
-                            className={`h-full ${Number(v.conversao) >= 70 ? 'bg-green-500' : Number(v.conversao) >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`} 
-                            style={{ width: `${Math.min(v.conversao, 100)}%` }}
-                          />
-                          <div 
-                            className="absolute top-0 bottom-0 w-[2px] bg-zinc-900 dark:bg-zinc-300 z-10 opacity-70" 
-                            style={{ left: '70%' }} 
-                            title="Meta Esperada: 70%" 
+                            className={`h-full ${v.rifas >= META_POR_VENDEDOR ? 'bg-green-500' : v.rifas >= (META_POR_VENDEDOR/2) ? 'bg-yellow-500' : 'bg-red-500'}`} 
+                            style={{ width: `${Math.min((v.rifas / META_POR_VENDEDOR) * 100, 100)}%` }}
                           />
                         </div>
                       </div>
                     </td>
+
                     <td className="p-4 text-right font-black text-green-600 dark:text-green-400 text-lg">R$ {fmtValor(v.valor)}</td>
                   </tr>
                 ))
               )}
             </tbody>
+            {vendedoresOrdenados.length > 0 && (
+              <tfoot>
+                <tr className="bg-zinc-100 dark:bg-zinc-950 border-t-2 border-zinc-300 dark:border-zinc-700">
+                  <td colSpan="3" className="p-4 font-black text-zinc-900 dark:text-white text-right uppercase tracking-wider text-sm">TOTAL DA LISTA:</td>
+                  <td className="p-4 font-black text-zinc-900 dark:text-white text-center text-xl">{totaisTabela.rifas}</td>
+                  <td></td>
+                  <td className="p-4 font-black text-green-600 dark:text-green-400 text-right text-lg">R$ {fmtValor(totaisTabela.valor)}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
