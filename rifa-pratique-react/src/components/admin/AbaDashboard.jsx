@@ -12,12 +12,16 @@ import autoTable from 'jspdf-autotable';
 const TOTAL_RIFAS = 1000;
 const META_POR_VENDEDOR = 20; 
 
-// 🚀 CORREÇÃO DO FORMATO DE MOEDA (Agora com ponto de milhar: 9.212,12)
 const fmtValor = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
 
-// Limpador absoluto de strings
+// Limpador absoluto de strings para uso no motor de dados
 const normalizarTexto = (texto) => String(texto || '').trim().toUpperCase();
+
+// 🚀 NOVO: Formatador de Elegância (Title Case) para Pódio e WhatsApp
+const toTitleCase = (str) => {
+  return String(str || '').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+};
 
 export default function AbaDashboard({ pedidos, vendedores }) {
   
@@ -26,7 +30,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
   const [ordenacao, setOrdenacao]         = useState('rifas'); 
   const [ordemDirecao, setOrdemDirecao]   = useState('desc');  
 
-  // 🚀 ESTADOS DO PREVIEW DO WHATSAPP
+  // ESTADOS DO PREVIEW DO WHATSAPP
   const [modalWhatsAppOpen, setModalWhatsAppOpen] = useState(false);
   const [mensagemZap, setMensagemZap]             = useState('');
   const [textoCopiado, setTextoCopiado]           = useState(false); 
@@ -169,7 +173,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   }
 
-  // GERADOR DO RANKING GAMIFICADO DO WHATSAPP
+  // 🚀 GERADOR DO RANKING GAMIFICADO DO WHATSAPP (Agora com Nome Completo e Elegante)
   const prepararRankingWhatsApp = () => {
     const rankingInquebravel = [...vendedoresFiltrados]
       .filter(v => v.nome !== 'VENDA DIRETA')
@@ -200,7 +204,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     if (pontuaram.length > 0) {
       linhas.push('*VENDAS REALIZADAS:*');
       pontuaram.forEach((v) => {
-        const nome  = v.nome.split(' ')[0];
+        const nome  = toTitleCase(v.nome); // 🚀 USA O NOME COMPLETO FORMATADO
         const rifas = String(v.rifas).padStart(2, '0');
         const emoji = getEmojiMeta(v.rifas);
         linhas.push(`${pos}º ${emoji} ${nome} - ${rifas}/${META_POR_VENDEDOR} rifas`);
@@ -212,7 +216,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       linhas.push('');
       linhas.push('*AINDA NÃO PONTUARAM:*');
       zerados.forEach((v) => {
-        const nome = v.nome.split(' ')[0];
+        const nome = toTitleCase(v.nome); // 🚀 USA O NOME COMPLETO FORMATADO
         linhas.push(`${pos}º 🔴 ${nome} - 00/${META_POR_VENDEDOR} rifas`);
         pos++;
       });
@@ -484,24 +488,24 @@ export default function AbaDashboard({ pedidos, vendedores }) {
           </div>
         </div>
 
-        {/* 🚀 PÓDIO INTELIGENTE */}
+        {/* 🚀 PÓDIO INTELIGENTE COM NOME COMPLETO (FORMATADO) */}
         <div className="mb-10 mt-4 flex flex-row justify-center items-end gap-2 sm:gap-4 px-2">
           <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-zinc-400 h-[120px] sm:h-[140px] shadow-sm">
             <span className="text-2xl sm:text-3xl mb-1 drop-shadow-md">🥈</span>
-            <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[1] ? top3Vendedores[1].nome.split(' ')[0] : '---'}</span>
-            <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[1] ? `${top3Vendedores[1].rifas} RIFAS` : '-'}</span>
+            <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full">{top3Vendedores[1] ? toTitleCase(top3Vendedores[1].nome) : '---'}</span>
+            <span className="text-zinc-500 text-[10px] sm:text-xs font-bold uppercase">{top3Vendedores[1] ? `${top3Vendedores[1].rifas} RIFAS` : '-'}</span>
           </div>
           
           <div className="flex-1 max-w-[170px] bg-gradient-to-t from-orange-50 to-white dark:from-orange-900/20 dark:to-zinc-900 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-yellow-500 h-[150px] sm:h-[180px] shadow-xl z-10 transform -translate-y-2">
             <span className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">🥇</span>
-            <span className="font-black text-orange-600 dark:text-orange-500 text-sm sm:text-base text-center truncate w-full uppercase">{top3Vendedores[0] ? top3Vendedores[0].nome.split(' ')[0] : '---'}</span>
-            <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black">{top3Vendedores[0] ? `${top3Vendedores[0].rifas} RIFAS` : '-'}</span>
+            <span className="font-black text-orange-600 dark:text-orange-500 text-sm sm:text-base text-center truncate w-full">{top3Vendedores[0] ? toTitleCase(top3Vendedores[0].nome) : '---'}</span>
+            <span className="text-orange-800 dark:text-orange-300 text-xs sm:text-sm font-black uppercase">{top3Vendedores[0] ? `${top3Vendedores[0].rifas} RIFAS` : '-'}</span>
           </div>
           
           <div className="flex-1 max-w-[150px] bg-zinc-50 dark:bg-zinc-800/40 rounded-t-2xl p-4 flex flex-col items-center justify-end border-b-4 border-orange-700 h-[100px] sm:h-[120px] shadow-sm">
             <span className="text-xl sm:text-2xl mb-1 drop-shadow-md">🥉</span>
-            <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full uppercase">{top3Vendedores[2] ? top3Vendedores[2].nome.split(' ')[0] : '---'}</span>
-            <span className="text-zinc-500 text-[10px] sm:text-xs font-bold">{top3Vendedores[2] ? `${top3Vendedores[2].rifas} RIFAS` : '-'}</span>
+            <span className="font-black text-zinc-800 dark:text-zinc-200 text-xs sm:text-sm text-center truncate w-full">{top3Vendedores[2] ? toTitleCase(top3Vendedores[2].nome) : '---'}</span>
+            <span className="text-zinc-500 text-[10px] sm:text-xs font-bold uppercase">{top3Vendedores[2] ? `${top3Vendedores[2].rifas} RIFAS` : '-'}</span>
           </div>
         </div>
         

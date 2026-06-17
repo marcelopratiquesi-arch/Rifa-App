@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   LockKey, SignOut, ChartLine, Receipt,
-  Users, Gear, Ticket, RocketLaunch
+  Users, Gear, Ticket, RocketLaunch, CurrencyDollar
 } from '@phosphor-icons/react';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -14,6 +14,8 @@ import AbaSorteio   from './admin/AbaSorteio';
 import AbaDashboard from './admin/AbaDashboard';
 import AbaEquipe    from './admin/AbaEquipe';
 import AbaConfig    from './admin/AbaConfig';
+// 🚀 IMPORTANDO A NOVA ABA AQUI
+import AbaFluxoCaixa from './admin/AbaFluxoCaixa'; 
 
 export default function TelaAdmin() {
   // ─── ESTADOS GLOBAIS ────────────────────────────────────────────
@@ -113,9 +115,10 @@ export default function TelaAdmin() {
       {/* MENU DE NAVEGAÇÃO DAS ABAS */}
       <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-800 mb-6 overflow-x-auto scrollbar-none">
         {[
-          { key: 'pedidos',    label: 'Validação', icon: <Receipt size={17}/>,   cor: 'orange', badge: qtdPendentes },
+          { key: 'pedidos',    label: 'Validação', icon: <Receipt size={17}/>,  cor: 'orange', badge: qtdPendentes },
           { key: 'sorteio',    label: 'Sorteio',   icon: <Ticket size={17}/>,    cor: 'purple', badge: 0 },
           { key: 'relatorios', label: 'Dashboard', icon: <ChartLine size={17}/>, cor: 'orange', badge: 0 },
+          { key: 'fluxo',      label: 'Fluxo de Caixa', icon: <CurrencyDollar size={17}/>, cor: 'green', badge: 0 }, // 🚀 NOVA ABA ADICIONADA AQUI
           { key: 'equipe',     label: 'Equipe',    icon: <Users size={17}/>,     cor: 'orange', badge: 0 },
           { key: 'config',     label: 'Config',    icon: <Gear size={17}/>,      cor: 'red',    badge: 0 },
         ].map(({ key, label, icon, cor, badge }) => (
@@ -124,6 +127,7 @@ export default function TelaAdmin() {
               abaAtiva === key
                 ? cor === 'red' ? 'border-red-500 text-red-500'
                 : cor === 'purple' ? 'border-purple-500 text-purple-500'
+                : cor === 'green' ? 'border-green-500 text-green-500' // Adicionei cor verde para o fluxo
                 : 'border-orange-500 text-orange-500'
                 : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
             }`}
@@ -139,11 +143,11 @@ export default function TelaAdmin() {
       </div>
 
       {/* ─── RENDERIZAÇÃO CONDICIONAL DAS ABAS ─── */}
-      {/* Aqui é onde a magia acontece: injetamos os dados como "props" */}
       <div className="min-h-[500px]">
         {abaAtiva === 'pedidos'    && <AbaValidacao pedidos={pedidos} vendedores={vendedores} />}
         {abaAtiva === 'sorteio'    && <AbaSorteio   pedidos={pedidos} />}
         {abaAtiva === 'relatorios' && <AbaDashboard pedidos={pedidos} vendedores={vendedores} />}
+        {abaAtiva === 'fluxo'      && <AbaFluxoCaixa pedidos={pedidos} />} {/* 🚀 RENDERIZANDO A NOVA ABA AQUI */}
         {abaAtiva === 'equipe'     && <AbaEquipe    vendedores={vendedores} />}
         {abaAtiva === 'config'     && <AbaConfig    pedidos={pedidos} setAbaAtiva={setAbaAtiva} />}
       </div>
