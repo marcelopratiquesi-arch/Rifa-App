@@ -10,7 +10,8 @@ import autoTable from 'jspdf-autotable';
 
 // Configurações e Funções Auxiliares Isoladas
 const TOTAL_RIFAS = 1000;
-const META_POR_VENDEDOR = 20; 
+// 🚀 ALTERAÇÃO SOLICITADA: Meta ajustada para 40 (Acumulado Junho + Julho)
+const META_POR_VENDEDOR = 40; 
 
 const fmtValor = (v) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
@@ -18,7 +19,7 @@ const fmtData  = (ts) => new Date(ts).toLocaleString('pt-BR');
 // Limpador absoluto de strings para uso no motor de dados
 const normalizarTexto = (texto) => String(texto || '').trim().toUpperCase();
 
-// 🚀 NOVO: Formatador de Elegância (Title Case) para Pódio e WhatsApp
+// Formatador de Elegância (Title Case) para Pódio e WhatsApp
 const toTitleCase = (str) => {
   return String(str || '').toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 };
@@ -173,7 +174,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     }
   }
 
-  // 🚀 GERADOR DO RANKING GAMIFICADO DO WHATSAPP (Agora com Nome Completo e Elegante)
+  // GERADOR DO RANKING GAMIFICADO DO WHATSAPP
   const prepararRankingWhatsApp = () => {
     const rankingInquebravel = [...vendedoresFiltrados]
       .filter(v => v.nome !== 'VENDA DIRETA')
@@ -194,7 +195,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
 
     let pos = 1;
 
-    // Função para definir o Emoji com base na meta
+    // Função para definir o Emoji com base na meta de 40
     const getEmojiMeta = (rifas) => {
       if (rifas >= META_POR_VENDEDOR) return '🟢';
       if (rifas > 0) return '🟡';
@@ -204,7 +205,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
     if (pontuaram.length > 0) {
       linhas.push('*VENDAS REALIZADAS:*');
       pontuaram.forEach((v) => {
-        const nome  = toTitleCase(v.nome); // 🚀 USA O NOME COMPLETO FORMATADO
+        const nome  = toTitleCase(v.nome); 
         const rifas = String(v.rifas).padStart(2, '0');
         const emoji = getEmojiMeta(v.rifas);
         linhas.push(`${pos}º ${emoji} ${nome} - ${rifas}/${META_POR_VENDEDOR} rifas`);
@@ -216,7 +217,7 @@ export default function AbaDashboard({ pedidos, vendedores }) {
       linhas.push('');
       linhas.push('*AINDA NÃO PONTUARAM:*');
       zerados.forEach((v) => {
-        const nome = toTitleCase(v.nome); // 🚀 USA O NOME COMPLETO FORMATADO
+        const nome = toTitleCase(v.nome); 
         linhas.push(`${pos}º 🔴 ${nome} - 00/${META_POR_VENDEDOR} rifas`);
         pos++;
       });
