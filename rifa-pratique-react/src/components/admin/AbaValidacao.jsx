@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   MagnifyingGlass, FunnelSimple, Storefront, CalendarBlank,
   WhatsappLogo, CheckCircle, XCircle, Clock, Receipt,
-  PencilSimple, CheckSquare, Square, WarningCircle
+  PencilSimple, CheckSquare, Square, WarningCircle, Trash
 } from '@phosphor-icons/react';
 import { doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../services/firebase';
@@ -37,6 +37,10 @@ export default function AbaValidacao({ pedidos, vendedores }) {
   const [editandoNumerosId,  setEditandoNumerosId]  = useState(null);
   const [numerosInput,       setNumerosInput]       = useState('');
 
+  // Novo estado para edição de cliente
+  const [editandoClienteId,  setEditandoClienteId]  = useState(null);
+  const [clienteForm,        setClienteForm]        = useState({ nome: '', tel: '', cpf: '' });
+
   const vendedoresAtivos = vendedores.filter(v => v.ativo !== false);
 
   // ─── AÇÕES DO FIREBASE ────────────────────────────────────────
@@ -49,6 +53,55 @@ export default function AbaValidacao({ pedidos, vendedores }) {
       toast.success('Vendedor atualizado!');
     } catch (e) {
       toast.error('Erro ao atualizar vendedor.');
+    }
+  };
+
+  // ✅ Iniciar edição de Nome, Telefone e CPF
+  const iniciarEdicaoCliente = (p) => {
+    setEditandoClienteId(p.id);
+    setClienteForm({ nome: p.nome || '', tel: p.tel || '', cpf: p.cpf || '' });
+  };
+
+  // ✅ Salvar edição do Cliente
+  const salvarEdicaoCliente = async (id) => {
+    if (!clienteForm.nome || !clienteForm.tel) {
+      toast.error('Nome e telefone são obrigatórios.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'pedidos', id), {
+        nome: clienteForm.nome,
+        tel: clienteForm.tel,
+        cpf: clienteForm.cpf
+      });
+      setEditandoClienteId(null);
+      toast.success('Dados do cliente atualizados com sucesso!');
+    } catch (e) {
+      toast.error('Erro ao atualizar dados do cliente.');
+    }
+  };
+
+  // ✅ Excluir pedido definitivamente (limpa pedido e libera números)
+  const deletarPedido = async (id) => {
+    if (!window.confirm('🚨 TEM CERTEZA? Isso vai excluir totalmente o pedido e liberar os números!')) return;
+    try {
+      const pedido = pedidos.find(p => p.id === id);
+      const batch  = writeBatch(db);
+
+      // Deleta o documento do pedido
+      batch.delete(doc(db, 'pedidos', id));
+
+      // Libera as reservas vinculadas a este pedido
+      if (pedido && pedido.nums) {
+        pedido.nums.forEach(num => {
+          batch.delete(doc(db, 'numerosReservados', String(num).padStart(3, '0')));
+        });
+      }
+
+      await batch.commit();
+      toast.success('Pedido excluído e números liberados!');
+    } catch (e) {
+      toast.error('Erro ao excluir pedido.');
     }
   };
 
@@ -423,59 +476,81 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                 }`} />
 
                 <div className="p-5 flex-1 flex flex-col">
-                  {/* Cabeçalho do card */}
-                  <div className="flex justify-between items-start mb-3 gap-2">
-                    <div className="flex-1">
-                      <p className="font-black text-zinc-900 dark:text-white text-base leading-tight uppercase break-words">{p.nome}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1 mt-1">
-                        <CalendarBlank size={12} /> {fmtData(p.ts)}
-                      </p>
-                    </div>
-                    <span className="text-orange-600 dark:text-orange-400 font-black text-base whitespace-nowrap bg-orange-50 dark:bg-orange-900/20 px-3 py-1 rounded border border-orange-100 dark:border-orange-800/30 shrink-0">
-                      R$ {fmtValor(p.valor)}
-                    </span>
-                  </div>
-
-                  {/* Info do cliente */}
-                  <div className="text-xs text-zinc-600 dark:text-zinc-400 mb-4 bg-zinc-50 dark:bg-zinc-950 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800/50 space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium flex items-center gap-1.5"><WhatsappLogo size={14} /> {p.tel}</span>
-                      <span className="font-mono text-[11px] font-bold text-zinc-400">#{p.id.slice(-6)}</span>
-                    </div>
-                    {p.cpf && (
-                      <div className="font-medium flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
-                        <Receipt size={14} /> {p.cpf}
+                  
+                  {/* SEÇÃO DE EDIÇÃO DE CLIENTE OU EXIBIÇÃO NORMAL */}
+                  {editandoClienteId === p.id ? (
+                    <div className="mb-4 bg-zinc-50 dark:bg-zinc-950 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 flex flex-col gap-2">
+                      <label className="text-[10px] font-bold uppercase text-zinc-500">Editar Dados do Cliente</label>
+                      <input type="text" value={clienteForm.nome} onChange={e => setClienteForm({...clienteForm, nome: e.target.value})} placeholder="Nome completo" className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-sm font-bold text-zinc-900 dark:text-white" />
+                      <input type="text" value={clienteForm.tel} onChange={e => setClienteForm({...clienteForm, tel: e.target.value})} placeholder="Telefone" className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-900 dark:text-white" />
+                      <input type="text" value={clienteForm.cpf} onChange={e => setClienteForm({...clienteForm, cpf: e.target.value})} placeholder="CPF" className="w-full bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded px-2 py-1.5 text-sm text-zinc-900 dark:text-white" />
+                      <div className="flex gap-2 mt-1">
+                        <button onClick={() => salvarEdicaoCliente(p.id)} className="flex-1 bg-green-500 hover:bg-green-600 transition-colors text-white py-1.5 rounded flex items-center justify-center gap-1 font-bold text-xs"><CheckCircle size={16} weight="bold" /> Salvar</button>
+                        <button onClick={() => setEditandoClienteId(null)} className="flex-1 bg-red-500 hover:bg-red-600 transition-colors text-white py-1.5 rounded flex items-center justify-center gap-1 font-bold text-xs"><XCircle size={16} weight="bold" /> Cancelar</button>
                       </div>
-                    )}
-
-                    {/* Edição de vendedor */}
-                    <div className="mt-2 flex items-center justify-between gap-2 bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-900/30">
-                      {editandoVendedorId === p.id ? (
-                        <div className="flex w-full items-center gap-1">
-                          <select value={novoVendedorLocal} onChange={e => setNovoVendedorLocal(e.target.value)}
-                            className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs font-bold uppercase text-zinc-900 dark:text-white focus:outline-none"
-                          >
-                            <option value="">— VENDA DIRETA —</option>
-                            {vendedoresAtivos.map(v => <option key={v.id} value={v.nome}>{v.nome}</option>)}
-                          </select>
-                          <button onClick={() => salvarNovoVendedor(p.id)} className="p-1.5 bg-green-500 hover:bg-green-600 text-white rounded"><CheckCircle size={14} weight="bold" /></button>
-                          <button onClick={() => setEditandoVendedorId(null)} className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded"><XCircle size={14} weight="bold" /></button>
-                        </div>
-                      ) : (
-                        <>
-                          <p className="text-orange-600 dark:text-orange-500 font-bold text-xs flex items-center gap-1.5 truncate uppercase">
-                            <Storefront size={14} className="shrink-0" />
-                            <span className="truncate">{p.vendedor || 'VENDA DIRETA'}</span>
-                          </p>
-                          <button onClick={() => { setEditandoVendedorId(p.id); setNovoVendedorLocal(p.vendedor || ''); }}
-                            className="text-zinc-400 hover:text-orange-600 p-1 transition-colors shrink-0"
-                          >
-                            <PencilSimple size={14} weight="bold" />
-                          </button>
-                        </>
-                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      {/* Cabeçalho do card */}
+                      <div className="flex justify-between items-start mb-3 gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-start gap-2">
+                            <p className="font-black text-zinc-900 dark:text-white text-base leading-tight uppercase break-words">{p.nome}</p>
+                            <button onClick={() => iniciarEdicaoCliente(p)} className="text-zinc-400 hover:text-orange-600 mt-0.5 transition-colors shrink-0" title="Editar Nome, CPF e Telefone">
+                              <PencilSimple size={16} weight="bold" />
+                            </button>
+                          </div>
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1 mt-1">
+                            <CalendarBlank size={12} /> {fmtData(p.ts)}
+                          </p>
+                        </div>
+                        <span className="text-orange-600 dark:text-orange-400 font-black text-base whitespace-nowrap bg-orange-50 dark:bg-orange-900/20 px-3 py-1 rounded border border-orange-100 dark:border-orange-800/30 shrink-0">
+                          R$ {fmtValor(p.valor)}
+                        </span>
+                      </div>
+
+                      {/* Info do cliente */}
+                      <div className="text-xs text-zinc-600 dark:text-zinc-400 mb-4 bg-zinc-50 dark:bg-zinc-950 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800/50 space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium flex items-center gap-1.5"><WhatsappLogo size={14} /> {p.tel}</span>
+                          <span className="font-mono text-[11px] font-bold text-zinc-400">#{p.id.slice(-6)}</span>
+                        </div>
+                        {p.cpf && (
+                          <div className="font-medium flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                            <Receipt size={14} /> {p.cpf}
+                          </div>
+                        )}
+
+                        {/* Edição de vendedor */}
+                        <div className="mt-2 flex items-center justify-between gap-2 bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-900/30">
+                          {editandoVendedorId === p.id ? (
+                            <div className="flex w-full items-center gap-1">
+                              <select value={novoVendedorLocal} onChange={e => setNovoVendedorLocal(e.target.value)}
+                                className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs font-bold uppercase text-zinc-900 dark:text-white focus:outline-none"
+                              >
+                                <option value="">— VENDA DIRETA —</option>
+                                {vendedoresAtivos.map(v => <option key={v.id} value={v.nome}>{v.nome}</option>)}
+                              </select>
+                              <button onClick={() => salvarNovoVendedor(p.id)} className="p-1.5 bg-green-500 hover:bg-green-600 text-white rounded"><CheckCircle size={14} weight="bold" /></button>
+                              <button onClick={() => setEditandoVendedorId(null)} className="p-1.5 bg-red-500 hover:bg-red-600 text-white rounded"><XCircle size={14} weight="bold" /></button>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-orange-600 dark:text-orange-500 font-bold text-xs flex items-center gap-1.5 truncate uppercase">
+                                <Storefront size={14} className="shrink-0" />
+                                <span className="truncate">{p.vendedor || 'VENDA DIRETA'}</span>
+                              </p>
+                              <button onClick={() => { setEditandoVendedorId(p.id); setNovoVendedorLocal(p.vendedor || ''); }}
+                                className="text-zinc-400 hover:text-orange-600 p-1 transition-colors shrink-0" title="Editar Vendedor"
+                              >
+                                <PencilSimple size={14} weight="bold" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {/* Edição de números */}
                   <div className="mb-4">
@@ -522,7 +597,7 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                     </p>
                   )}
 
-                  {/* 🚀 AÇÕES COM MENSAGENS DO WHATSAPP DE ACORDO COM O STATUS */}
+                  {/* 🚀 AÇÕES COM MENSAGENS DO WHATSAPP E EXCLUSÕES DE ACORDO COM O STATUS */}
                   <div className="grid grid-cols-1 gap-2 mt-auto pt-2">
                     
                     {p.status === 'pendente' && (
@@ -547,19 +622,37 @@ export default function AbaValidacao({ pedidos, vendedores }) {
                     )}
 
                     {p.status === 'pago' && (
-                      <button onClick={() => notificarAprovadoWhatsApp(p)}
-                        className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm uppercase"
-                      >
-                        <WhatsappLogo size={18} weight="fill" /> Enviar Recibo de Compra
-                      </button>
+                      <div className="grid grid-cols-12 gap-2">
+                        <button onClick={() => notificarAprovadoWhatsApp(p)}
+                          className="col-span-10 flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe57] text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm uppercase"
+                        >
+                          <WhatsappLogo size={18} weight="fill" /> Enviar Recibo de Compra
+                        </button>
+                        {/* Botão de excluir aprovação errada */}
+                        <button onClick={() => deletarPedido(p.id)}
+                          className="col-span-2 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-zinc-400 hover:text-red-500 text-xs font-bold py-2.5 rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700"
+                          title="Excluir pedido e liberar números"
+                        >
+                          <Trash size={18} weight="fill" />
+                        </button>
+                      </div>
                     )}
 
                     {p.status === 'expirado' && (
-                      <button onClick={() => recuperarExpiradoWhatsApp(p)}
-                        className="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm uppercase"
-                      >
-                        <WhatsappLogo size={18} weight="fill" /> Tentar Recuperar Venda
-                      </button>
+                      <div className="grid grid-cols-12 gap-2">
+                        <button onClick={() => recuperarExpiradoWhatsApp(p)}
+                          className="col-span-10 flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-2.5 rounded-lg transition-colors shadow-sm uppercase"
+                        >
+                          <WhatsappLogo size={18} weight="fill" /> Tentar Recuperar Venda
+                        </button>
+                        {/* Botão de limpar sujeira (excluir expirado definitivamente) */}
+                        <button onClick={() => deletarPedido(p.id)}
+                          className="col-span-2 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-zinc-400 hover:text-red-500 text-xs font-bold py-2.5 rounded-lg transition-colors border border-zinc-200 dark:border-zinc-700"
+                          title="Excluir pedido do histórico"
+                        >
+                          <Trash size={18} weight="fill" />
+                        </button>
+                      </div>
                     )}
 
                   </div>
